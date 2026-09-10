@@ -1,0 +1,32 @@
+schema_version = "1.0.0"
+
+id = "ladybug_tools"
+version = "0.4.0"
+name = "Ladybug Tools"
+tagline = "Sun path, solar radiation and climate analysis inside Blender"
+maintainer = "Leandro <leandro@janela.tec.br>"
+type = "add-on"
+website = "https://www.ladybug.tools/"
+tags = ["3D View", "Lighting", "Scene"]
+blender_version_min = "4.2.0"
+
+# Ladybug core libraries are AGPL-3.0; this add-on inherits that license.
+license = ["SPDX:AGPL-3.0-or-later"]
+copyright = ["2026 Leandro", "2013-2026 Ladybug Tools LLC"]
+
+# Pure-Python wheels bundled with the extension. numpy comes from Blender itself.
+wheels = [
+  "./wheels/ladybug_geometry-1.35.4-py3-none-any.whl",
+  "./wheels/ladybug_core-0.44.59-py3-none-any.whl",
+  "./wheels/ladybug_comfort-0.19.8-py3-none-any.whl",
+  "./wheels/ladybug_radiance-0.2.12-py3-none-any.whl",
+  "./wheels/ladybug_display-0.14.3-py3-none-any.whl",
+  "./wheels/click-8.3.3-py3-none-any.whl",
+  "./wheels/colorama-0.4.6-py2.py3-none-any.whl",
+]
+
+[permissions]
+files = "Read EPW weather files chosen by the user"
+
+[build]
+paths_exclude_pattern = ["__pycache__/", "/.git/", "*.zip", "/tests/"]
