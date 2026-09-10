@@ -33,11 +33,14 @@ iluminação natural com bounces. As legendas devem deixar isso claro.
    EPW, período, timestep, densidade, offset, contexto, norte.
 3. **EPW Summary mais informativo.** Mostrar `COMMENTS 1/2` (origem da
    radiação, anos por mês) e a fonte do arquivo.
-4. **Validação contra o Radiance.** Rodar `gendaymtx` oficial (binários LBNL)
-   com o mesmo `.wea` e comparar patch a patch; comparar horas de sol e
-   radiação numa cena simples com `ladybug-radiance` + Radiance. Guardar
-   como fixtures em `tests/`. O teste atual (conservação de energia) é
-   necessário, não suficiente.
+4. ~~**Validação contra o Radiance.**~~ (feito) `tests/validate_radiance.py`
+   compara com o `gendaymtx` 6.0 patch a patch: correlação ≥ 0,988, totais
+   dentro de 0,7 %, superfícies desobstruídas dentro de 1,5 %; referência
+   gravada em `tests/fixtures/` e verificada pelo teste normal. Achado de
+   passagem: o parser do `ladybug_radiance.SkyMatrix` 0.2.x pula um número
+   fixo de linhas de cabeçalho e, com a linha `LATLONG=` do Radiance 6.0,
+   desloca os patches em um (vale reportar upstream). Falta ainda comparar
+   horas de sol e radiação numa cena com obstrução usando `rcontrib`.
 5. **Gráficos 2D** (psicrométrica, hourly plot, barras mensais) como SVG
    importado em curvas ou PNG no Image Editor, em vez de geometria 3D.
 6. Publicar: GitHub, OSArch, fórum do Ladybug Tools.

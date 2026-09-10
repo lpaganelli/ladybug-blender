@@ -81,13 +81,32 @@ applied. Values live on the result copies as mesh attributes
 
 ## Validation
 
-`tests/test_skymatrix.py` checks energy conservation of the native sky matrix
-against the Wea (direct and diffuse exact, global horizontal within 1 % on
-the Tregenza dome). `tests/test_headless.py` runs every operator in
-background mode on a synthetic scene and checks physical plausibility
-(southern hemisphere: north facade > south facade, tower shadow on the
-ground, shared scales, caching). A patch-by-patch comparison with Radiance's
-`gendaymtx` is planned; see [docs/ROADMAP.md](docs/ROADMAP.md).
+The native sky matrix was compared patch by patch with Radiance 6.0's
+`gendaymtx` (`tests/validate_radiance.py`, reference values stored in
+`tests/fixtures/`), on a clear-sky year, a clear-sky June, a cloudy year and
+the Reinhart dome:
+
+| Case | Patch correlation | Total radiation | Unobstructed surfaces (N, E, S, W, horizontal, 30° tilt) |
+|---|---|---|---|
+| clear-sky annual, Tregenza | 0.997 | +0.13 % | within 1.5 % |
+| clear-sky annual, Reinhart | 0.988 | +0.06 % | within 1.3 % |
+| clear-sky June | 0.993 | +0.06 % | within 0.9 % |
+| cloudy annual (Zhang-Huang) | 0.998 | +0.32 % | within 0.9 % |
+
+The diffuse component matches to 0.1 % per patch; the direct component
+differs only in how the sun is spread over the nearest patches (gendaymtx
+lights up to four, this port three), which averages out on any surface.
+
+`tests/test_skymatrix.py` checks energy conservation against the Wea and the
+stored gendaymtx reference without needing Radiance. `tests/test_headless.py`
+runs every operator in background mode on a synthetic scene and checks
+physical plausibility (southern hemisphere: north facade > south facade,
+tower shadow on the ground, shared scales, caching).
+
+Note for ladybug-radiance users: Radiance 6.0's `gendaymtx` writes an extra
+`LATLONG=` header line, and `ladybug_radiance.SkyMatrix` 0.2.x skips a fixed
+number of header lines, so with 6.0 binaries its patches come out shifted by
+one (the ground patch becomes patch 0). This port does not use that parser.
 
 Performance on a 2500-face grid with 5 context blocks (Blender 5.x, one core):
 annual direct sun hours 5 s, annual radiation 0.8 s, sky matrix 0.4 s,

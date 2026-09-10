@@ -42,6 +42,36 @@ def main(epw_path):
     assert abs(dhi_from_sky - dhi_wea) / dhi_wea < 0.02, 'diffuse normalization broken'
     assert abs(direct.sum() - dni_wea) / dni_wea < 0.001, 'direct energy not conserved'
     assert abs(ghi_from_sky - ghi_wea) / ghi_wea < 0.05, 'GHI mismatch too large'
+
+    # --- against Radiance gendaymtx reference values (tests/fixtures) ---
+    fixture = os.path.join(HERE, 'fixtures', 'gendaymtx_reference.json')
+    if os.path.isfile(fixture) and os.path.basename(epw_path) == 'test_sao_paulo.epw':
+        import json
+        with open(fixture) as f:
+            ref = json.load(f)
+        for name, case in ref.items():
+            if not isinstance(case, dict):
+                continue
+            if case['high_density'] or 'annual' not in name or 'clear' not in name:
+                continue
+            r_tot = np.array(case['direct']) + np.array(case['diffuse'])
+            corr = float(np.corrcoef(r_tot, direct + diffuse)[0, 1])
+            tot = abs(float(np.sum(direct + diffuse)) - float(np.sum(r_tot))) / float(np.sum(r_tot))
+            print('vs gendaymtx (%s): patch correlation %.4f, total diff %.2f%%' % (
+                name, corr, 100 * tot))
+            assert corr > 0.99, corr
+            assert tot < 0.01, tot
+            for surf, (a, _b) in case['surfaces'].items():
+                n = {'horizontal': (0, 0, 1), 'north': (0, 1, 0), 'east': (1, 0, 0),
+                     'south': (0, -1, 0), 'west': (-1, 0, 0)}.get(surf)
+                if n is None:
+                    continue
+                n = np.array(n, dtype=float)
+                sky = direct + diffuse
+                ground = np.full(len(sky), float(np.sum(sky)) / len(sky) * 0.2)
+                mine = float(np.sum(sky * np.maximum(vecs @ n, 0)) +
+                             np.sum(ground * np.maximum((vecs * [1, 1, -1]) @ n, 0)))
+                assert abs(mine - a) / a < 0.03, (surf, mine, a)
     print('OK')
 
 
