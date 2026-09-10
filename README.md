@@ -98,8 +98,15 @@ The diffuse component matches to 0.1 % per patch; the direct component
 differs only in how the sun is spread over the nearest patches (gendaymtx
 lights up to four, this port three), which averages out on any surface.
 
+The BVH ray casting was compared with Radiance's `oconv` + `rcontrib`
+(`tests/validate_rcontrib.py`) on the test scene (1600 ground sensors shaded
+by a tower and a tilted roof): direct sun hours agree on 100 % of the rays
+for June 21 and December 21; annual incident radiation differs by 0.02 % of
+the maximum on average and 1.6 % at worst (sensors on patch boundaries).
+
 `tests/test_skymatrix.py` checks energy conservation against the Wea and the
-stored gendaymtx reference without needing Radiance. `tests/test_headless.py`
+stored gendaymtx reference without needing Radiance; `tests/test_headless.py`
+checks the ground sun hours against the stored rcontrib reference. `tests/test_headless.py`
 runs every operator in background mode on a synthetic scene and checks
 physical plausibility (southern hemisphere: north facade > south facade,
 tower shadow on the ground, shared scales, caching).

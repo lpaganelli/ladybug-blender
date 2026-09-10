@@ -42,8 +42,10 @@ iluminação natural com bounces. As legendas devem deixar isso claro.
    gravada em `tests/fixtures/` e verificada pelo teste normal. Achado de
    passagem: o parser do `ladybug_radiance.SkyMatrix` 0.2.x pula um número
    fixo de linhas de cabeçalho e, com a linha `LATLONG=` do Radiance 6.0,
-   desloca os patches em um (vale reportar upstream). Falta ainda comparar
-   horas de sol e radiação numa cena com obstrução usando `rcontrib`.
+   desloca os patches em um (vale reportar upstream). A interseção também
+   foi validada (`tests/validate_rcontrib.py`): horas de sol idênticas ao
+   `rcontrib` em 100 % dos raios; radiação anual com diferença média de
+   0,02 % e máxima de 1,6 % do valor máximo.
 5. **Gráficos 2D** (psicrométrica, hourly plot, barras mensais) como SVG
    importado em curvas ou PNG no Image Editor, em vez de geometria 3D.
 6. Publicar: GitHub, OSArch, fórum do Ladybug Tools.

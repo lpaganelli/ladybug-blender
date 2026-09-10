@@ -104,6 +104,16 @@ def main():
         min(hours), max(hours), sum(hours) / len(hours), time.time() - t0))
     assert max(hours) > 8, 'open ground should see most of the day'
     assert min(hours) < max(hours), 'tower should cast a shadow'
+    # against the Radiance rcontrib reference of the same scene (tests/fixtures)
+    fixture = os.path.join(HERE, 'fixtures', 'rcontrib_reference.json')
+    if os.path.isfile(fixture) and os.path.basename(epw) == 'test_sao_paulo.epw':
+        import json
+        with open(fixture) as f:
+            ref_hours = json.load(f)['sun hours 21/6']['ref_hours']
+        assert len(ref_hours) == len(hours)
+        worst = max(abs(a - b) for a, b in zip(hours, ref_hours))
+        print('vs rcontrib (Jun 21 ground): max |diff| %.2f h' % worst)
+        assert worst <= 1.0, worst
     assert 'LB Color' in res.data.color_attributes
     assert 'LB Sun Hours' not in ground.data.attributes, 'source must stay untouched'
     assert not ground.hide_get(), 'source must stay visible'
