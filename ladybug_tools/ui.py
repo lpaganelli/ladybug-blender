@@ -41,6 +41,13 @@ class LB_PT_period(LBPanel, bpy.types.Panel):
     def draw(self, context):
         p = context.scene.ladybug
         layout = self.layout
+        grid = layout.grid_flow(columns=3, align=True)
+        for ident, label, _desc in (('YEAR', 'Year', ''), ('SUMMER', 'Summer', ''),
+                                    ('WINTER', 'Winter', ''),
+                                    ('SUMMER_SOLSTICE', 'Sum. Solstice', ''),
+                                    ('WINTER_SOLSTICE', 'Win. Solstice', ''),
+                                    ('EQUINOX', 'Equinox', '')):
+            grid.operator('ladybug.period_preset', text=label).preset = ident
         col = layout.column(align=True)
         row = col.row(align=True)
         row.prop(p, 'ap_st_month', text='')
@@ -123,6 +130,7 @@ class LB_PT_studies(LBPanel, bpy.types.Panel):
         col.prop(p, 'st_offset')
         col.prop(p, 'st_by_vertex')
         col.prop(p, 'st_cache_year')
+        col.prop(p, 'st_persist_cache')
         layout.operator('ladybug.direct_sun_hours', icon='OUTLINER_OB_LIGHT')
 
         box = layout.box()

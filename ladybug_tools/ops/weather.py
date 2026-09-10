@@ -60,24 +60,87 @@ class LB_OT_epw_summary(bpy.types.Operator):
         rh = epw.relative_humidity.filter_by_analysis_period(ap)
         ws = epw.wind_speed.filter_by_analysis_period(ap)
         ghr = epw.global_horizontal_radiation.filter_by_analysis_period(ap)
+        dnr = epw.direct_normal_radiation.filter_by_analysis_period(ap)
         lines = [
-            '{} {} | lat {:.2f} lon {:.2f} tz {} | {}'.format(
+            '{} {} | lat {:.2f} lon {:.2f} tz {} | elev {:.0f} m | {}'.format(
                 epw.location.city, epw.location.country, epw.location.latitude,
                 epw.location.longitude, epw.location.time_zone,
-                common.period_label(context)),
+                epw.location.elevation, common.period_label(context)),
+            'Source: {} | station {}'.format(
+                epw.location.source or '?', epw.location.station_id or '?'),
             'Dry bulb: min {:.1f} / avg {:.1f} / max {:.1f} C'.format(
                 dbt.min, dbt.average, dbt.max),
             'Relative humidity: avg {:.0f} %'.format(rh.average),
             'Wind speed: avg {:.1f} / max {:.1f} m/s'.format(ws.average, ws.max),
-            'Global horizontal radiation: {:.0f} kWh/m2'.format(ghr.total / 1000.0),
+            'Radiation: global horizontal {:.0f} kWh/m2, direct normal {:.0f} kWh/m2'.format(
+                ghr.total / 1000.0, dnr.total / 1000.0),
         ]
+        # which real years were stitched into this typical year, month by month
+        try:
+            years = epw.years.values
+            per_month = []
+            for m in range(1, 13):
+                ys = sorted({int(y) for y, dt in zip(years, epw.years.datetimes)
+                             if dt.month == m})
+                per_month.append('/'.join(str(y) for y in ys) if ys else '?')
+            if len(set(per_month)) > 1:
+                lines.append('Years by month (Jan-Dec): ' + ', '.join(per_month))
+            else:
+                lines.append('Year: {}'.format(per_month[0]))
+        except Exception:  # noqa: BLE001
+            pass
+        # COMMENTS 1/2 usually say where the radiation comes from (measured, ERA5...)
+        for label, text in (('Comments 1', epw.comments_1), ('Comments 2', epw.comments_2)):
+            text = (text or '').strip()
+            if text:
+                lines.append('{}: {}'.format(label, text[:400]))
         for ln in lines:
             print('[Ladybug]', ln)
             self.report({'INFO'}, ln)
         return {'FINISHED'}
 
 
-CLASSES = (LB_OT_load_epw, LB_OT_reload_epw, LB_OT_epw_summary)
+PRESETS = [
+    ('YEAR', 'Year', 'Whole year, every hour'),
+    ('SUMMER_SOLSTICE', 'Summer Solstice', 'Longest day of the year at this latitude'),
+    ('WINTER_SOLSTICE', 'Winter Solstice', 'Shortest day of the year at this latitude'),
+    ('EQUINOX', 'Equinox', 'March 21'),
+    ('SUMMER', 'Summer', 'Three summer months at this latitude'),
+    ('WINTER', 'Winter', 'Three winter months at this latitude'),
+]
+
+
+class LB_OT_period_preset(bpy.types.Operator):
+    """Set the analysis period to a common preset (hemisphere-aware)"""
+    bl_idname = 'ladybug.period_preset'
+    bl_label = 'Period Preset'
+    bl_options = {'REGISTER', 'UNDO'}
+
+    preset: bpy.props.EnumProperty(name='Preset', items=PRESETS, default='YEAR')
+
+    def execute(self, context):
+        p = common.props(context)
+        south = p.latitude < 0
+        if self.preset == 'YEAR':
+            st, end = (1, 1), (12, 31)
+        elif self.preset == 'SUMMER_SOLSTICE':
+            st = end = (12, 21) if south else (6, 21)
+        elif self.preset == 'WINTER_SOLSTICE':
+            st = end = (6, 21) if south else (12, 21)
+        elif self.preset == 'EQUINOX':
+            st = end = (3, 21)
+        elif self.preset == 'SUMMER':
+            st, end = ((12, 1), (2, 28)) if south else ((6, 1), (8, 31))
+        else:  # WINTER
+            st, end = ((6, 1), (8, 31)) if south else ((12, 1), (2, 28))
+        p.ap_st_month, p.ap_st_day = str(st[0]), st[1]
+        p.ap_end_month, p.ap_end_day = str(end[0]), end[1]
+        p.ap_st_hour, p.ap_end_hour = 0, 23
+        self.report({'INFO'}, 'Period: {}'.format(common.period_label(context)))
+        return {'FINISHED'}
+
+
+CLASSES = (LB_OT_load_epw, LB_OT_reload_epw, LB_OT_epw_summary, LB_OT_period_preset)
 
 
 def register():

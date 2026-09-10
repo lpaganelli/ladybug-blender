@@ -30,7 +30,8 @@ radiation, direct sun hours and sky view; not for daylighting with bounces.
 Sidebar (N) → **Ladybug** tab in the 3D Viewport:
 
 - **Weather & Location**: load an EPW, or type latitude / longitude / time zone; north angle.
-- **Analysis Period**: start/end month, day, hour; timestep.
+- **Analysis Period**: start/end month, day, hour; timestep; one-click presets
+  (year, seasons, solstices, equinox, hemisphere-aware).
 - **Sun Path**: hourly analemmas, day arcs for the 21st of each month, compass,
   sun points; a real Sun light aimed for a date/time; one-day animation.
 - **Solar Studies**, in batch on all selected meshes, each shading the others:
@@ -124,8 +125,8 @@ Cycles-based daylight experiment.
 - Another add-on that reloads numpy in-process (the legacy DeepBump does)
   breaks array *method* reductions for every add-on. This one only uses
   module-level numpy functions and keeps working, but others may not.
-- The visibility cache lives in memory: after reopening a file, run the study
-  again before using the Period Explorer.
+- The visibility cache is saved on each result object (uncheck *Save Cache in
+  File* to keep .blend files small); results made before 0.4.1 have no cache.
 
 ## License
 

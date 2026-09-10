@@ -269,6 +269,38 @@ def main():
     p.st_cache_year = False
     p.ap_st_month, p.ap_st_day, p.ap_end_month, p.ap_end_day = '1', 1, '12', 31
 
+    # --- period presets are hemisphere-aware (Sao Paulo: summer = December) ---
+    assert bpy.ops.ladybug.period_preset(preset='SUMMER_SOLSTICE') == {'FINISHED'}
+    assert (p.ap_st_month, p.ap_st_day, p.ap_end_month, p.ap_end_day) == ('12', 21, '12', 21)
+    assert bpy.ops.ladybug.period_preset(preset='WINTER') == {'FINISHED'}
+    assert (p.ap_st_month, p.ap_end_month, p.ap_end_day) == ('6', '8', 31)
+    assert bpy.ops.ladybug.period_preset(preset='YEAR') == {'FINISHED'}
+    assert (p.ap_st_month, p.ap_end_month) == ('1', '12')
+    assert bpy.ops.ladybug.epw_summary() == {'FINISHED'}
+
+    # --- persisted cache: survives a save/reload round trip ---
+    from ladybug_tools.ops import studies as st_mod
+    gres = result_of(ground, 'Sun Hours')
+    assert 'lb_vis_sun' in gres and 'lb_vis_sky' in result_of(roof, 'Radiation')
+    st_mod._VIS_CACHE.clear()
+    cache = st_mod._cache_get(gres)
+    assert cache is not None and cache['kind'] == 'sun'
+    unpacked = __import__('numpy').unpackbits(cache['matrix'], axis=1, count=cache['count'])
+    assert unpacked.shape == (len(gres.data.polygons), cache['count'])
+    p.ex_mode, p.ex_month, p.ex_day = 'DAY', 12, 21
+    assert bpy.ops.ladybug.explore_period() == {'FINISHED'}
+    assert max(values(result_of(ground, 'Sun Hours'), 'LB Sun Hours')) > 12
+    p.ex_mode = 'YEAR'
+    assert bpy.ops.ladybug.explore_period() == {'FINISHED'}
+
+    # --- scale warning on centimeter-sized geometry ---
+    bpy.ops.mesh.primitive_plane_add(size=800, location=(0, 0, -50))
+    huge = bpy.context.active_object
+    huge.name = 'HugePlane'
+    assert st_mod.scale_warning([huge]).startswith('geometry larger')
+    assert st_mod.scale_warning([ground]) == ''
+    bpy.data.objects.remove(huge, do_unlink=True)
+
     # --- rebuild legend with new settings, without recomputing ---
     p.lg_size = 5.0
     p.lg_orientation = 'FLAT'

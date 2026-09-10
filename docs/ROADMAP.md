@@ -27,12 +27,15 @@ iluminação natural com bounces. As legendas devem deixar isso claro.
    resultado guarda em memória a matriz `sensores × patches` (radiação, que
    independe do período) ou `sensores × horas traçadas` (horas de sol, com a
    opção *Compute Full Year*). O painel *Period Explorer* recolore por ano,
-   mês, dia ou faixa de horas sem novo ray tracing. O cache não sobrevive ao
-   fechamento do arquivo; persistir como atributo é um passo futuro.
+   mês, dia ou faixa de horas sem novo ray tracing. Desde a v0.4.1 o cache é
+   gravado no objeto de resultado e sobrevive ao fechamento do arquivo.
 2. ~~**Metadados nos resultados.**~~ (feito na v0.3) Custom properties com
    EPW, período, timestep, densidade, offset, contexto, norte.
-3. **EPW Summary mais informativo.** Mostrar `COMMENTS 1/2` (origem da
-   radiação, anos por mês) e a fonte do arquivo.
+3. ~~**EPW Summary mais informativo.**~~ (feito na v0.4.1) Mostra fonte,
+   estação, anos por mês e `COMMENTS 1/2`. Também na v0.4.1: presets de
+   período (solstícios, equinócio, verão, inverno, ano, conforme o
+   hemisfério), aviso de escala para FBX em centímetros e cache de
+   visibilidade persistido no `.blend`.
 4. ~~**Validação contra o Radiance.**~~ (feito) `tests/validate_radiance.py`
    compara com o `gendaymtx` 6.0 patch a patch: correlação ≥ 0,988, totais
    dentro de 0,7 %, superfícies desobstruídas dentro de 1,5 %; referência

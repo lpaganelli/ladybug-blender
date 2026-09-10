@@ -280,18 +280,86 @@ def _finish_batch(context, sources, results):
 # ---------------------------------------------------------------------------
 _VIS_CACHE = {}
 CACHE_PROP = 'lb_cache_id'
+SCALE_WARN_M = 400.0
+
+
+def scale_warning(objects):
+    """Message when geometry looks like it was imported in centimeters."""
+    big = []
+    for ob in objects:
+        dims = ob.dimensions
+        if max(dims) > SCALE_WARN_M:
+            big.append('{} ({:.0f} m)'.format(ob.name, max(dims)))
+    if not big:
+        return ''
+    return ('geometry larger than {:.0f} m, check the import scale (FBX in cm?): {}'
+            .format(SCALE_WARN_M, ', '.join(big[:3])))
 
 
 def _cache_put(ob, kind, **data):
+    """Keep the visibility matrix in memory and persist it on the object."""
     key = uuid.uuid4().hex
     ob[CACHE_PROP] = key
     data['kind'] = kind
     _VIS_CACHE[key] = data
+    p = common.props(bpy.context)
+    if not p.st_persist_cache:
+        _drop_persisted(ob)
+        return
+    ob['lb_vis_kind'] = kind
+    if kind == 'sky':
+        m = data['matrix']
+        ob['lb_vis_shape'] = list(m.shape)
+        ob['lb_vis_sky'] = np.ascontiguousarray(m, dtype=np.float32).ravel()
+        ob['lb_vis_patches'] = int(data['patches'])
+        ob['lb_vis_north'] = float(data['north'])
+    else:
+        packed = np.ascontiguousarray(data['matrix'], dtype=np.uint8)
+        ob['lb_vis_shape'] = list(packed.shape)
+        raw = packed.ravel()
+        pad = (-len(raw)) % 4
+        raw = np.concatenate([raw, np.zeros(pad, np.uint8)]) if pad else raw
+        ob['lb_vis_sun'] = np.frombuffer(raw.tobytes(), dtype=np.int32)
+        ob['lb_vis_count'] = int(data['count'])
+        ob['lb_vis_hoys'] = np.asarray(data['hoys'], dtype=np.float64)
+        ob['lb_vis_timestep'] = int(data['timestep'])
+
+
+def _drop_persisted(ob):
+    for k in ('lb_vis_kind', 'lb_vis_shape', 'lb_vis_sky', 'lb_vis_patches',
+              'lb_vis_north', 'lb_vis_sun', 'lb_vis_count', 'lb_vis_hoys',
+              'lb_vis_timestep'):
+        if k in ob:
+            del ob[k]
+
+
+def _cache_load(ob):
+    """Rebuild the in-memory cache from the properties saved in the .blend."""
+    kind = ob.get('lb_vis_kind')
+    if not kind:
+        return None
+    shape = tuple(int(v) for v in ob['lb_vis_shape'])
+    if kind == 'sky':
+        m = np.array(ob['lb_vis_sky'], dtype=np.float32).reshape(shape)
+        return {'kind': 'sky', 'matrix': m, 'patches': int(ob['lb_vis_patches']),
+                'north': float(ob['lb_vis_north'])}
+    ints = np.array(ob['lb_vis_sun'], dtype=np.int32)
+    raw = np.frombuffer(ints.tobytes(), dtype=np.uint8)[:shape[0] * shape[1]]
+    return {'kind': 'sun', 'matrix': raw.reshape(shape), 'count': int(ob['lb_vis_count']),
+            'hoys': np.array(ob['lb_vis_hoys'], dtype=np.float64),
+            'timestep': int(ob['lb_vis_timestep'])}
 
 
 def _cache_get(ob):
     key = ob.get(CACHE_PROP)
-    return _VIS_CACHE.get(key) if key else None
+    if not key:
+        return None
+    cache = _VIS_CACHE.get(key)
+    if cache is None:
+        cache = _cache_load(ob)
+        if cache is not None:
+            _VIS_CACHE[key] = cache
+    return cache
 
 
 def _hoy_mask(hoys, ap):
@@ -479,9 +547,11 @@ class LB_OT_direct_sun_hours(bpy.types.Operator):
         _colorize_batch(context, items, 'Sun Hours')
         _finish_batch(context, sources, [ob for ob, _c, _v in items])
         hours = np.concatenate([v for _o, _c, v in items])
-        self.report({'INFO'}, '{} object(s), {} sensors x {} suns in {:.1f}s | avg {:.1f} h, max {:.1f} h'.format(
+        msg = '{} object(s), {} sensors x {} suns in {:.1f}s | avg {:.1f} h, max {:.1f} h'.format(
             len(items), n_sensors, len(vectors), time.time() - t0,
-            float(np.mean(hours)), float(np.max(hours))))
+            float(np.mean(hours)), float(np.max(hours)))
+        warn = scale_warning(sources)
+        self.report({'WARNING'} if warn else {'INFO'}, msg + (' | ' + warn if warn else ''))
         return {'FINISHED'}
 
 
@@ -539,9 +609,13 @@ class LB_OT_incident_radiation(bpy.types.Operator):
         _finish_batch(context, sources, [ob for ob, _c, _v in items])
         values = np.concatenate([v for _o, _c, v in items])
         extra = ' | total {:.0f} kWh'.format(total) if total else ''
-        self.report({'INFO'}, '{} object(s), {} sensors x {} patches in {:.1f}s | avg {:.1f} {}{}'.format(
-            len(items), n_sensors, len(vectors), time.time() - t0,
-            float(np.mean(values)), unit, extra))
+        warn = scale_warning(sources)
+        if warn:
+            extra += ' | ' + warn
+        self.report({'WARNING'} if warn else {'INFO'},
+                    '{} object(s), {} sensors x {} patches in {:.1f}s | avg {:.1f} {}{}'.format(
+                        len(items), n_sensors, len(vectors), time.time() - t0,
+                        float(np.mean(values)), unit, extra))
         return {'FINISHED'}
 
 
@@ -736,10 +810,12 @@ class LB_OT_sensor_grid(bpy.types.Operator):
         if fallback:
             msg += ' | open surfaces subdivided instead of remeshed: {}'.format(
                 ', '.join(fallback))
+        warn = scale_warning(sources)
+        if warn:
+            msg += ' | ' + warn
         if total > SENSOR_WARNING:
-            self.report({'WARNING'}, msg + ' | large grid, studies may take a while')
-        else:
-            self.report({'INFO'}, msg)
+            msg += ' | large grid, studies may take a while'
+        self.report({'WARNING'} if (warn or total > SENSOR_WARNING) else {'INFO'}, msg)
         return {'FINISHED'}
 
 

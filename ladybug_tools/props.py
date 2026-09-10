@@ -148,6 +148,10 @@ class LBSceneProps(bpy.types.PropertyGroup):
         name='Compute Full Year', default=False,
         description='Direct Sun Hours: trace every sun position of the year so the '
                     'Period Explorer can show any period without recomputing')
+    st_persist_cache: BoolProperty(
+        name='Save Cache in File', default=True,
+        description='Store the visibility matrix on each result object so the '
+                    'Period Explorer works after reopening the .blend (larger file)')
     # ---- period explorer (recolors cached results, no ray tracing) ----
     ex_mode: EnumProperty(
         name='Explore', update=_explorer_changed,
