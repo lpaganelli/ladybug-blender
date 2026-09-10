@@ -6,7 +6,7 @@ name = "Ladybug Tools"
 tagline = "Sun path, solar radiation and climate analysis inside Blender"
 maintainer = "Leandro <leandro@janela.tec.br>"
 type = "add-on"
-website = "https://www.ladybug.tools/"
+website = "https://github.com/lpaganelli/ladybug-blender"
 tags = ["3D View", "Lighting", "Scene"]
 blender_version_min = "4.2.0"
 
