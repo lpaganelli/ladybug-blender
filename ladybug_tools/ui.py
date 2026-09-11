@@ -208,6 +208,32 @@ class LB_PT_climate(LBPanel, bpy.types.Panel):
         box.operator('ladybug.wind_rose', icon='FORCE_WIND')
 
 
+class LB_PT_honeybee(LBPanel, bpy.types.Panel):
+    bl_label = 'Honeybee (IFC)'
+    bl_idname = 'LB_PT_honeybee'
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        from .ops.honeybee import ifcopenshell_available
+        p = context.scene.ladybug
+        layout = self.layout
+        if not ifcopenshell_available():
+            layout.label(text='Needs Bonsai (ifcopenshell) in this Blender', icon='ERROR')
+        row = layout.row(align=True)
+        row.prop(p, 'hb_ifc_path', text='', placeholder='IFC loaded in Bonsai')
+        row.operator('ladybug.ifc_pick', text='', icon='FILEBROWSER')
+        col = layout.column(align=True)
+        col.prop(p, 'hb_exclude')
+        col.prop(p, 'hb_ground_level')
+        col.prop(p, 'hb_context')
+        col.prop(p, 'hb_draw')
+        layout.operator('ladybug.ifc_to_honeybee', icon='HOME')
+        row = layout.row(align=True)
+        row.prop(p, 'hb_color_by', text='')
+        row.operator('ladybug.hb_redraw', text='', icon='FILE_REFRESH')
+        layout.operator('ladybug.hbjson_export', icon='EXPORT')
+
+
 class LB_PT_legend(LBPanel, bpy.types.Panel):
     bl_label = 'Legend'
     bl_idname = 'LB_PT_legend'
@@ -233,7 +259,7 @@ class LB_PT_legend(LBPanel, bpy.types.Panel):
 
 
 CLASSES = (LB_PT_weather, LB_PT_period, LB_PT_sunpath, LB_PT_studies, LB_PT_explorer,
-           LB_PT_climate, LB_PT_legend)
+           LB_PT_climate, LB_PT_honeybee, LB_PT_legend)
 
 
 def register():

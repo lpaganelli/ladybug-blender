@@ -51,6 +51,13 @@ Sidebar (N) → **Ladybug** tab in the 3D Viewport:
   Radiation Rose, Wind Rose (speed, temperature or humidity).
 - **Legend**: Ladybug color sets, custom range, segment count, size,
   position and orientation.
+- **Honeybee (IFC)** *(prototype, needs Bonsai's ifcopenshell)*: every `IfcSpace`
+  becomes a Honeybee Room built from the zone solid; `IfcRelSpaceBoundary`
+  surfaces classify the faces (element, internal/external, ground), windows and
+  doors become apertures and doors, `IfcMaterialLayerSet` + `Pset_MaterialThermal`
+  become opaque constructions, unbounded roofs/slabs/walls become context
+  shades. Interior walls are paired across their thickness. Draws the rooms
+  colored by boundary condition or face type and exports **HBJSON**.
 
 ## Install
 

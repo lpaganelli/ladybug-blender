@@ -57,14 +57,29 @@ programas) a partir do Blender e exportar **HBJSON**. O HBJSON é consumido por
 Grasshopper, Pollination e pela CLI do Honeybee, então isso desacopla "montar
 o modelo" (BIM, dentro do Blender) de "rodar o motor" (pode ser externo).
 
-Dois caminhos, em ordem:
+**Estado (v0.5, protótipo):** `core/ifc_bridge.py` lê o IFC com o ifcopenshell
+do Bonsai e monta o modelo: `IfcSpace` → Room a partir do sólido da zona
+(fechado, volume igual ao IFC); `IfcRelSpaceBoundary` classifica cada face
+(elemento, interno/externo, solo); `IfcWindow/IfcDoor` → Aperture/Door;
+`IfcMaterialLayerSet` + `Pset_MaterialThermal` → construções opacas; elementos
+sem limite (cobertura, lajes, muros) → Shades de contexto. Paredes internas
+são emparelhadas através da espessura (limites de 1º nível ficam na face
+interna de cada lado). Painel *Honeybee (IFC)* desenha os rooms e exporta
+HBJSON. Testado com a casa térrea do escritório: 12 rooms, 98 faces, 3 s.
 
-- **Blender simples**: coleções ou custom properties definem zonas e
-  tipos de face; materiais mapeiam construções por nome.
-- **IFC via Bonsai**: `IfcSpace` → Room, `IfcWall/IfcSlab/IfcRoof` → Face
-  com `boundary_condition`, `IfcWindow/IfcDoor` → Aperture/Door,
-  `IfcMaterialLayerSet` → construção opaca (espessura e condutividade quando o
-  IFC tiver propriedades térmicas; mapeamento por nome quando não tiver).
+Pendências da ponte:
+
+- Faces internas emparelhadas com áreas diferentes (uma parede de um quarto
+  encosta em dois vizinhos): dividir a face pela projeção do vizinho
+  (`Face3D.coplanar_split`) antes de emparelhar, ou mover ambas para o eixo
+  da parede.
+- Zonas sem parede entre si viram *AirBoundary* só quando coincidem; garagem
+  aberta continua como Outdoors.
+- Aberturas sem face hospedeira (porta na esquina, boundary fora do plano) são
+  descartadas com aviso.
+- Programas de uso, ventilação e HVAC ainda não são atribuídos (defaults do
+  Honeybee); vem com a fase 3.
+- Exportar também para o Blender simples (sem IFC) por coleções e materiais.
 
 ### Fase 3: Honeybee-Energy
 

@@ -152,6 +152,21 @@ class LBSceneProps(bpy.types.PropertyGroup):
         name='Save Cache in File', default=True,
         description='Store the visibility matrix on each result object so the '
                     'Period Explorer works after reopening the .blend (larger file)')
+    # ---- honeybee / IFC bridge ----
+    hb_ifc_path: StringProperty(name='IFC File', default='',
+                                description='IFC to convert (empty: the one loaded in Bonsai)')
+    hb_exclude: StringProperty(
+        name='Exclude', default='piscina, pool',
+        description='Comma-separated words; spaces whose name contains one are skipped')
+    hb_context: BoolProperty(name='Context Shades', default=True,
+                             description='Add unbounded roofs, slabs and walls as shading')
+    hb_ground_level: FloatProperty(name='Ground Level', default=0.0, unit='LENGTH',
+                                   description='Floors at or below this height touch the ground')
+    hb_draw: BoolProperty(name='Draw Rooms', default=True)
+    hb_color_by: EnumProperty(
+        name='Color By', default='BC',
+        items=[('BC', 'Boundary Condition', 'Outdoors, Ground, Surface, Adiabatic'),
+               ('TYPE', 'Face Type', 'Wall, Floor, RoofCeiling, AirBoundary')])
     # ---- period explorer (recolors cached results, no ray tracing) ----
     ex_mode: EnumProperty(
         name='Explore', update=_explorer_changed,

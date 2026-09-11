@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "ladybug_tools"
-version = "0.4.1"
+version = "0.5.0"
 name = "Ladybug Tools"
 tagline = "Sun path, solar radiation and climate analysis inside Blender"
 maintainer = "Leandro <leandro@janela.tec.br>"
@@ -21,6 +21,10 @@ wheels = [
   "./wheels/ladybug_comfort-0.19.8-py3-none-any.whl",
   "./wheels/ladybug_radiance-0.2.12-py3-none-any.whl",
   "./wheels/ladybug_display-0.14.3-py3-none-any.whl",
+  "./wheels/ladybug_geometry_polyskel-1.7.53-py3-none-any.whl",
+  "./wheels/honeybee_core-1.64.68-py3-none-any.whl",
+  "./wheels/honeybee_energy-1.124.0-py3-none-any.whl",
+  "./wheels/honeybee_standards-2.0.7-py2.py3-none-any.whl",
   "./wheels/click-8.3.3-py3-none-any.whl",
   "./wheels/colorama-0.4.6-py2.py3-none-any.whl",
 ]
