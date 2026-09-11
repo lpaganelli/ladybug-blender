@@ -83,12 +83,39 @@ Pendências da ponte:
 
 ### Fase 3: Honeybee-Energy
 
-`honeybee-energy` é Python puro: escreve IDF e lê o SQL. O único obstáculo é o
-binário do EnergyPlus, que não pode ir dentro da Extension. Solução: uma
-preferência "caminho do EnergyPlus" com validação. A instalação do E+ traz a
-API `pyenergyplus`, que roda o motor in-process: basta pôr a pasta do E+ no
-`sys.path`. Vantagens sobre `subprocess`: callbacks por timestep (barra de
-progresso), acesso a variáveis durante a simulação, sem parsing de stdout.
+**Estado (v0.6, protótipo funcional):** `core/energy_sim.py` + `ops/energy.py`.
+Com o EnergyPlus instalado (auto-detectado em `C:\EnergyPlus*`, ou caminho no
+painel), o botão *Simulate* na caixa EnergyPlus do painel Honeybee:
+
+1. Atribui programas residenciais pelo nome do ambiente (quarto, sala,
+   cozinha, banheiro, serviço, garagem): pessoas, iluminação, equipamentos,
+   infiltração e setpoints 18/26 °C, com horários diários simples.
+2. *Free Running* (padrão): sem HVAC, janelas externas abrem quando o interior
+   passa de 22 °C e o exterior está entre 16 e 32 °C (`ZoneVentilation:
+   WindandStackOpenArea`). *Ideal Air*: aquecimento e resfriamento ideais nos
+   ambientes ocupados.
+3. Escreve o IDF (honeybee-energy + `Site:Location` e temperaturas do solo do
+   EPW), roda o `energyplus.exe`, lê o SQLite (`ladybug.sql`).
+4. Colore os rooms por métrica (horas acima/abaixo do conforto, % de horas
+   confortáveis, temperatura operativa média/máx/mín) com legenda, e imprime
+   o relatório por ambiente.
+
+Casa térrea de teste: 12 zonas, ano inteiro em 9 min (558 s) com 776
+superfícies de sombreamento; 7 dias em 104 s. Resultados coerentes: Sala com
+pé-direito duplo e vidro é a mais quente e a mais fria; garagem fria.
+
+Pendências:
+
+- **Tempo**: o custo é o sombreamento do contexto (telhado em centenas de
+  peças). Mesclar planos coplanares entre elementos, descartar lajes internas
+  e peças pequenas; já sem reflexões e com sombras a cada 30 dias.
+- Rodar via `pyenergyplus` in-process com barra de progresso, em vez de
+  bloquear o Blender durante a simulação (`subprocess` hoje).
+- Programas e horários editáveis no painel; programas por norma (NBR 15575)
+  como preset.
+- Resultados horários no Period Explorer (temperatura por mês/dia) e gráficos
+  2D (hourly plot por ambiente).
+- Ainda sem persistência dos resultados no `.blend` além dos números por room.
 
 ### Fase 4: Radiance real e Cycles
 

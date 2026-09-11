@@ -58,6 +58,11 @@ Sidebar (N) → **Ladybug** tab in the 3D Viewport:
   become opaque constructions, unbounded roofs/slabs/walls become context
   shades. Interior walls are paired across their thickness. Draws the rooms
   colored by boundary condition or face type and exports **HBJSON**.
+- **EnergyPlus** *(prototype)*: with EnergyPlus installed, *Simulate* assigns
+  residential programs from the room names, free-running natural ventilation
+  or ideal air, writes the IDF, runs an annual simulation and colors the rooms
+  by hours above/below comfort, comfortable-hours share or operative
+  temperature, with a per-room report.
 
 ## Install
 

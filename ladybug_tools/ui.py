@@ -233,6 +233,26 @@ class LB_PT_honeybee(LBPanel, bpy.types.Panel):
         row.operator('ladybug.hb_redraw', text='', icon='FILE_REFRESH')
         layout.operator('ladybug.hbjson_export', icon='EXPORT')
 
+        box = layout.box()
+        box.label(text='EnergyPlus', icon='LIGHT_DATA')
+        box.prop(p, 'en_ep_path', text='', placeholder='auto-detect EnergyPlus')
+        box.prop(p, 'en_hvac', text='')
+        if p.en_hvac == 'FREE_RUNNING':
+            col = box.column(align=True)
+            col.prop(p, 'en_vent_min_indoor')
+            row = col.row(align=True)
+            row.prop(p, 'en_vent_min_outdoor')
+            row.prop(p, 'en_vent_max_outdoor')
+        row = box.row(align=True)
+        row.prop(p, 'en_comfort_low')
+        row.prop(p, 'en_comfort_high')
+        box.prop(p, 'en_timestep')
+        box.operator('ladybug.energy_simulate', icon='PLAY')
+        row = box.row(align=True)
+        row.prop(p, 'en_metric', text='')
+        row.operator('ladybug.energy_color', text='', icon='COLOR')
+        row.operator('ladybug.energy_report', text='', icon='INFO')
+
 
 class LB_PT_legend(LBPanel, bpy.types.Panel):
     bl_label = 'Legend'

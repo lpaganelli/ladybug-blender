@@ -167,6 +167,29 @@ class LBSceneProps(bpy.types.PropertyGroup):
         name='Color By', default='BC',
         items=[('BC', 'Boundary Condition', 'Outdoors, Ground, Surface, Adiabatic'),
                ('TYPE', 'Face Type', 'Wall, Floor, RoofCeiling, AirBoundary')])
+    # ---- energy simulation ----
+    en_ep_path: StringProperty(name='EnergyPlus', default='',
+                               description='EnergyPlus install folder (empty: auto-detect)')
+    en_folder: StringProperty(name='Run Folder', default='',
+                              description='Where IDF and results are written (empty: next to the IFC)')
+    en_hvac: EnumProperty(
+        name='Conditioning', default='FREE_RUNNING',
+        items=[('FREE_RUNNING', 'Free Running', 'No HVAC; windows open when warm inside and mild outside'),
+               ('IDEAL_AIR', 'Ideal Air', 'Ideal heating/cooling at 18/26 C in occupied rooms')])
+    en_timestep: IntProperty(name='Timesteps/h', default=4, min=1, max=12)
+    en_vent_min_indoor: FloatProperty(name='Open Above (indoor)', default=22.0)
+    en_vent_min_outdoor: FloatProperty(name='Outdoor Min', default=16.0)
+    en_vent_max_outdoor: FloatProperty(name='Outdoor Max', default=32.0)
+    en_comfort_low: FloatProperty(name='Comfort Min', default=18.0)
+    en_comfort_high: FloatProperty(name='Comfort Max', default=26.0)
+    en_metric: EnumProperty(
+        name='Metric', default='hours_hot',
+        items=[('hours_hot', 'Hours Above Comfort', ''),
+               ('hours_cold', 'Hours Below Comfort', ''),
+               ('pct_comfort', 'Comfortable Hours %', ''),
+               ('mean', 'Mean Temperature', ''),
+               ('max', 'Max Temperature', ''),
+               ('min', 'Min Temperature', '')])
     # ---- period explorer (recolors cached results, no ray tracing) ----
     ex_mode: EnumProperty(
         name='Explore', update=_explorer_changed,

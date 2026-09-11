@@ -139,6 +139,18 @@ def boundary_face3d(rel, space_matrix, scale, tol=TOL):
     return face
 
 
+def _is_sound(face, tol=TOL, min_area=0.02):
+    """True when a face survives EnergyPlus' vertex merging (>= 3 distinct vertices)."""
+    if face.area < min_area:
+        return False
+    pts = list(face.boundary)
+    distinct = []
+    for p in pts:
+        if all(p.distance_to_point(q) > tol for q in distinct):
+            distinct.append(p)
+    return len(distinct) >= 3
+
+
 def merge_coplanar(faces, tol=TOL, angle_tol=0.02):
     """Group faces by plane and join each group along shared edges.
 
@@ -306,10 +318,11 @@ class IfcToHoneybee(object):
     """
 
     def __init__(self, ifc_path, exclude=EXCLUDE_DEFAULT, include_context=True,
-                 ground_level=0.0, tolerance=TOL):
+                 ground_level=0.0, tolerance=TOL, context_reach=10.0):
         self.path = ifc_path
         self.exclude = tuple(e.lower() for e in exclude)
         self.include_context = include_context
+        self.context_reach = context_reach
         self.ground_level = ground_level
         self.tol = tolerance
         self.f = ifcopenshell.open(ifc_path)
@@ -452,7 +465,7 @@ class IfcToHoneybee(object):
             }
             if el is not None:
                 face.display_name = '{} · {}'.format(name, el.Name)
-                if el.is_a('IfcRoof'):
+                if el.is_a('IfcRoof') and fg.normal.z > 0.2:  # sloped roof, not a gable wall
                     face.type = face_types.roof_ceiling
                 con = self.lib.construction_for(el)
                 if con is not None:
@@ -560,8 +573,9 @@ class IfcToHoneybee(object):
             if coincident and not fa.has_sub_faces and not best.has_sub_faces and \
                     fa.type == face_types.wall and best.type == face_types.wall:
                 # two zones touching without a wall between them: open plan
-                fa.type = face_types.air_boundary
-                best.type = face_types.air_boundary
+                for f in (fa, best):
+                    f.type = face_types.air_boundary
+                    f.properties.energy.construction = None  # use the air boundary construction
                 air += 1
             pairs += 1
         self.report['air_boundaries'] = air
@@ -612,8 +626,22 @@ class IfcToHoneybee(object):
         return proj
 
     # ---- context ----
-    def _context_shades(self, bounded_ids, merge_limit=400):
+    def _context_shades(self, bounded_ids, merge_limit=2000, rooms=None, reach=None):
+        """Unbounded elements as shades, limited to those near the rooms.
+
+        ``reach`` (meters) drops elements whose bounding box is farther than
+        that from the rooms' bounding box; EnergyPlus shadow calculations
+        scale with the number of shading surfaces, so far context is costly
+        and irrelevant.
+        """
         shades = []
+        box = None
+        if rooms and reach is not None:
+            mins = [r.min for r in rooms]
+            maxs = [r.max for r in rooms]
+            box = (min(p.x for p in mins) - reach, min(p.y for p in mins) - reach,
+                   min(p.z for p in mins) - reach, max(p.x for p in maxs) + reach,
+                   max(p.y for p in maxs) + reach, max(p.z for p in maxs) + reach)
         for cls in CONTEXT_CLASSES:
             for el in self.f.by_type(cls):
                 if el.id() in bounded_ids:
@@ -621,9 +649,17 @@ class IfcToHoneybee(object):
                 tris = element_faces(self.f, el, self.settings)
                 if not tris:
                     continue
+                if box is not None:
+                    xs = [p.x for t in tris for p in t.boundary]
+                    ys = [p.y for t in tris for p in t.boundary]
+                    zs = [p.z for t in tris for p in t.boundary]
+                    if (max(xs) < box[0] or min(xs) > box[3] or max(ys) < box[1] or
+                            min(ys) > box[4] or max(zs) < box[2] or min(zs) > box[5]):
+                        continue
                 merged = tris
                 if len(tris) <= merge_limit:  # coplanar merge is quadratic
                     merged = merge_coplanar(tris, self.tol)
+                merged = [g for g in merged if _is_sound(g, self.tol, min_area=0.05)]
                 for i, g in enumerate(merged):
                     sh = Shade(_ident('{}_{}_{}'.format(cls, el.id(), i)), g, is_detached=True)
                     sh.display_name = el.Name or cls
@@ -676,7 +712,8 @@ class IfcToHoneybee(object):
                 '{} interior doors/windows dropped from unmatched internal faces'.format(dropped))
 
         t_ctx = time.time()
-        shades = self._context_shades(bounded_ids) if self.include_context else []
+        shades = self._context_shades(bounded_ids, rooms=rooms, reach=self.context_reach) \
+            if self.include_context else []
         self.timings['context'] = round(time.time() - t_ctx, 1)
         model = Model(_ident(self.f.by_type('IfcProject')[0].Name or 'ifc_model'),
                       rooms, orphaned_shades=shades, units='Meters',

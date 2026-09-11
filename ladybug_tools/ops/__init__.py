@@ -1,7 +1,7 @@
 """Operators of the Ladybug Tools extension."""
-from . import weather, sunpath, studies, roses, honeybee
+from . import weather, sunpath, studies, roses, honeybee, energy
 
-MODULES = (weather, sunpath, studies, roses, honeybee)
+MODULES = (weather, sunpath, studies, roses, honeybee, energy)
 
 
 def register():
