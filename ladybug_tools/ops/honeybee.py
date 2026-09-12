@@ -69,6 +69,8 @@ class LB_OT_ifc_to_honeybee(bpy.types.Operator):
         loc = bridge.location
         if loc and loc.get('latitude') is not None and not p.epw_loaded:
             p.latitude, p.longitude = loc['latitude'], loc['longitude']
+        if loc and loc.get('north'):  # IFC TrueNorth, when the BIM tool set one
+            p.north = loc['north']
         if p.hb_draw:
             hb_viz.draw_model(context, model, p.hb_color_by)
         rep = bridge.report

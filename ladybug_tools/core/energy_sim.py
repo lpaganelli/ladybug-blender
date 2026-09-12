@@ -221,11 +221,15 @@ DEFAULT_OUTPUTS = (
 
 
 def write_idf(model, epw_path, folder, outputs=DEFAULT_OUTPUTS, timestep=4,
-              run_period=None):
-    """Write in.idf (model + simulation parameters + site location)."""
+              run_period=None, north=0.0):
+    """Write in.idf (model + simulation parameters + site location).
+
+    ``north`` is the Ladybug north angle (counterclockwise degrees from +Y).
+    """
     os.makedirs(folder, exist_ok=True)
     sim_par = SimulationParameter()
     sim_par.timestep = timestep
+    sim_par.north_angle = float(north) % 360
     sim_par.shadow_calculation.calculation_frequency = 30  # days between shadow updates
     # no solar reflections from context: much cheaper with many shading surfaces
     sim_par.shadow_calculation.solar_distribution = 'FullExterior'
@@ -246,7 +250,7 @@ def write_idf(model, epw_path, folder, outputs=DEFAULT_OUTPUTS, timestep=4,
 
 
 def run(model, epw_path, folder, energyplus_path, outputs=DEFAULT_OUTPUTS, timestep=4,
-        run_period=None):
+        run_period=None, north=0.0):
     """Write the IDF, run EnergyPlus and return (sql_path, err_path, seconds)."""
     if not folders.energyplus_path or os.path.normpath(folders.energyplus_path) != \
             os.path.normpath(energyplus_path):
@@ -258,7 +262,7 @@ def run(model, epw_path, folder, energyplus_path, outputs=DEFAULT_OUTPUTS, times
             except OSError:
                 pass
     t0 = time.time()
-    idf = write_idf(model, epw_path, folder, outputs, timestep, run_period)
+    idf = write_idf(model, epw_path, folder, outputs, timestep, run_period, north)
     sql, zsz, rdd, html, err = run_idf(idf, epw_path, expand_objects=True, silent=True)
     fatal = []
     if err and os.path.isfile(err):

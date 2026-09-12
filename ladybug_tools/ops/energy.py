@@ -104,7 +104,7 @@ class LB_OT_energy_simulate(bpy.types.Operator):
                 from ladybug.dt import Date
                 run_period = RunPeriod(Date(1, 1), Date(1, min(int(days), 31)))
             sql, err, secs = energy_sim.run(model, epw, folder, ep, timestep=p.en_timestep,
-                                            run_period=run_period)
+                                            run_period=run_period, north=p.north)
             progress(0.9)
             colls, summary = energy_sim.read_results(
                 sql, model, comfort_low=p.en_comfort_low, comfort_high=p.en_comfort_high)

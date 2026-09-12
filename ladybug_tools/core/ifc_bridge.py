@@ -18,6 +18,7 @@ Reads an IFC file with ifcopenshell (the one bundled by Bonsai) and builds a
 The module has no Blender dependency and can run in any Python that has
 ifcopenshell, ladybug_geometry and honeybee(-energy) importable.
 """
+import math
 import re
 import time
 from collections import Counter
@@ -359,8 +360,16 @@ class IfcToHoneybee(object):
             frac = v[3] / 1e6 if len(v) > 3 else 0.0
             sign = -1 if deg < 0 or (deg == 0 and mn < 0) else 1
             return sign * (abs(deg) + abs(mn) / 60.0 + (abs(sec) + frac) / 3600.0)
+        # true north: counterclockwise degrees from the model +Y axis (Ladybug convention)
+        north = 0.0
+        for ctx in self.f.by_type('IfcGeometricRepresentationContext'):
+            if getattr(ctx, 'TrueNorth', None) and ctx.ContextType == 'Model':
+                x, y = ctx.TrueNorth.DirectionRatios[:2]
+                north = math.degrees(math.atan2(-x, y)) % 360
+                break
         return {'latitude': dms(s.RefLatitude), 'longitude': dms(s.RefLongitude),
-                'elevation': (s.RefElevation or 0.0) * self.scale, 'name': s.Name}
+                'elevation': (s.RefElevation or 0.0) * self.scale, 'name': s.Name,
+                'north': round(north, 3)}
 
     # ---- rooms ----
     def _space_polyface(self, space):
