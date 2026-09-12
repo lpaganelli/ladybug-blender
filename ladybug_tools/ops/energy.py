@@ -42,6 +42,23 @@ def find_energyplus():
     return sorted(candidates)[-1] if candidates else ''
 
 
+def _scene_context_faces(context):
+    """World-space polygons of 'HB Context' and any mesh tagged hb_shade, or None."""
+    objs = [o for o in bpy.data.objects if o.type == 'MESH' and
+            (o.name.startswith('HB Context') or o.get('hb_shade'))]
+    if not objs:
+        return None
+    from ..core.intersect import gather_world_polygons
+    depsgraph = context.evaluated_depsgraph_get()
+    faces = []
+    for ob in objs:
+        if ob.hide_get():
+            continue
+        verts, polys = gather_world_polygons([ob], depsgraph)
+        faces.extend([verts[i] for i in poly] for poly in polys)
+    return faces
+
+
 class LB_OT_energy_simulate(bpy.types.Operator):
     """Run an annual EnergyPlus simulation of the last Honeybee model (blocks Blender for a few minutes)"""
     bl_idname = 'ladybug.energy_simulate'
@@ -68,6 +85,12 @@ class LB_OT_energy_simulate(bpy.types.Operator):
         progress = common.ProgressReporter(context)
         try:
             progress(0.05)
+            # context shades come from the scene, so "HB Context" (and any mesh
+            # tagged hb_shade) can be edited by hand before simulating
+            scene_ctx = _scene_context_faces(context)
+            if scene_ctx is not None:
+                model.remove_shades()  # orphaned context only; room shades untouched
+                model.add_shades(energy_sim.scene_shades_from_faces(scene_ctx))
             kinds = energy_sim.prepare_model(
                 model, hvac=p.en_hvac, vent_min_indoor=p.en_vent_min_indoor,
                 vent_min_outdoor=p.en_vent_min_outdoor, vent_max_outdoor=p.en_vent_max_outdoor,
@@ -94,6 +117,10 @@ class LB_OT_energy_simulate(bpy.types.Operator):
         errs = energy_sim.read_err_summary(err)
         for m in errs['messages']:
             print('[Ladybug] EnergyPlus:', m)
+        if not summary:
+            self.report({'ERROR'}, 'EnergyPlus produced no zone results; see {} '
+                                   '({} severe)'.format(err, errs['severe']))
+            return {'CANCELLED'}
         color_rooms(context, p.en_metric)
         worst = max(summary.values(), key=lambda s: s['hours_hot'])
         self.report({'INFO'}, '{} zones in {:.0f}s | {} warnings, {} severe | hottest: {} ({} h > {:g} C)'.format(

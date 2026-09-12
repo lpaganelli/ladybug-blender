@@ -286,6 +286,16 @@ class ConstructionLibrary(object):
             self.constructions[key] = con
         return self.constructions[key]
 
+    def reversed(self, construction):
+        """The same construction with its layers reversed (for the other side)."""
+        key = ('rev', construction.identifier)
+        if key not in self.constructions:
+            rev = OpaqueConstruction(_ident(construction.identifier + '_Rev'),
+                                     list(reversed(construction.materials)))
+            rev.display_name = (construction.display_name or construction.identifier) + ' (rev)'
+            self.constructions[key] = rev
+        return self.constructions[key]
+
     def window_construction(self, element):
         """Simple glazing system for a window/door, from ThermalTransmittance if any."""
         ps = ue.get_psets(element)
@@ -570,6 +580,21 @@ class IfcToHoneybee(object):
                 f.user_data = dict(f.user_data or {})
                 f.user_data['gap'] = round(best_gap, 3)
                 f.user_data['internal'] = True
+            # EnergyPlus requires both sides of an interzone surface to use the
+            # same construction (it reverses the layers itself): share the one
+            # that came from the IFC, or the wall's construction for its doors
+            con_a = fa.properties.energy.construction if fa.properties.energy.is_construction_set_on_object else None
+            con_b = best.properties.energy.construction if best.properties.energy.is_construction_set_on_object else None
+            con = con_a or con_b
+            if con is not None:
+                fa.properties.energy.construction = con
+                best.properties.energy.construction = con if con.is_symmetric \
+                    else self.lib.reversed(con)
+            for f in (fa, best):
+                for sub in f.doors:
+                    sub.properties.energy.construction = None
+                for sub in f.apertures:
+                    sub.properties.energy.construction = None
             if coincident and not fa.has_sub_faces and not best.has_sub_faces and \
                     fa.type == face_types.wall and best.type == face_types.wall:
                 # two zones touching without a wall between them: open plan
@@ -642,9 +667,13 @@ class IfcToHoneybee(object):
             box = (min(p.x for p in mins) - reach, min(p.y for p in mins) - reach,
                    min(p.z for p in mins) - reach, max(p.x for p in maxs) + reach,
                    max(p.y for p in maxs) + reach, max(p.z for p in maxs) + reach)
+        # room faces per plane, to subtract from bounded elements (roof eaves,
+        # walls extending past the zones) so only their exposed parts shade
+        room_faces = [f.geometry for r in (rooms or []) for f in r.faces]
         for cls in CONTEXT_CLASSES:
             for el in self.f.by_type(cls):
-                if el.id() in bounded_ids:
+                bounded = el.id() in bounded_ids
+                if bounded and cls not in ('IfcRoof', 'IfcSlab', 'IfcWall'):
                     continue
                 tris = element_faces(self.f, el, self.settings)
                 if not tris:
@@ -665,12 +694,76 @@ class IfcToHoneybee(object):
                     # undersides and surfaces below the rooms cannot shade them
                     merged = [g for g in merged
                               if g.normal.z > -0.7 and g.max.z > floor_z + 0.3]
+                if bounded:
+                    # keep only what sticks out beyond the room faces (eaves)
+                    merged = self._subtract_room_faces(merged, room_faces)
                 for i, g in enumerate(merged):
                     sh = Shade(_ident('{}_{}_{}'.format(cls, el.id(), i)), g, is_detached=True)
                     sh.display_name = el.Name or cls
                     sh.user_data = {'ifc_guid': el.GlobalId, 'ifc_class': cls}
                     shades.append(sh)
         return shades
+
+    def _unify_adjacent_constructions(self, rooms):
+        """Give both sides of every interzone pair the same (or reversed) construction.
+
+        EnergyPlus rejects interzone surfaces whose constructions differ, and
+        Honeybee's own solve_adjacency does not touch constructions.
+        """
+        by_id = {}
+        for room in rooms:
+            for face in room.faces:
+                by_id[face.identifier] = face
+                for sub in face.sub_faces:
+                    by_id[sub.identifier] = sub
+        done = set()
+        for room in rooms:
+            for face in room.faces:
+                bc = face.boundary_condition
+                if bc.name != 'Surface' or face.identifier in done:
+                    continue
+                other = by_id.get(bc.boundary_condition_object)
+                if other is None:
+                    continue
+                done.add(face.identifier)
+                done.add(other.identifier)
+                ea, eb = face.properties.energy, other.properties.energy
+                con_a = ea.construction if ea.is_construction_set_on_object else None
+                con_b = eb.construction if eb.is_construction_set_on_object else None
+                con = con_a or con_b
+                if con is not None:
+                    face.properties.energy.construction = con
+                    other.properties.energy.construction = con if con.is_symmetric \
+                        else self.lib.reversed(con)
+                # interior doors/windows fall back to the wall's construction set
+                for f in (face, other):
+                    for sub in f.sub_faces:
+                        sub.properties.energy.construction = None
+
+    def _subtract_room_faces(self, faces, room_faces, min_area=0.1):
+        """Remove from context faces the parts covered by (coplanar) room faces."""
+        out = []
+        for g in faces:
+            overlapping = [
+                rf for rf in room_faces
+                if abs(abs(rf.normal.dot(g.normal)) - 1.0) < 0.03 and
+                abs(g.plane.distance_to_point(rf.center)) < 0.05 and
+                (g.is_point_on_face(g.plane.closest_point(rf.center), 0.05) or
+                 rf.is_point_on_face(rf.plane.closest_point(g.center), 0.05))]
+            if not overlapping:
+                out.append(g)
+                continue
+            try:
+                # the room face lies on the inner side; project it onto g's plane
+                proj = [Face3D([g.plane.closest_point(p) for p in rf.boundary], g.plane)
+                        for rf in overlapping]
+                pieces = g.coplanar_difference(proj, self.tol, 0.03)
+            except Exception:  # noqa: BLE001
+                continue  # boolean failed: drop the element face rather than double it
+            for piece in pieces:
+                if piece.area >= min_area and _is_sound(piece, self.tol, min_area):
+                    out.append(piece)
+        return out
 
     # ---- main ----
     def build(self):
@@ -697,6 +790,7 @@ class IfcToHoneybee(object):
         adj = Room.solve_adjacency(rooms, self.tol)
         n_adj = len(adj.get('adjacent_faces', []))
         n_adj += self._pair_internal_faces(rooms)
+        self._unify_adjacent_constructions(rooms)
         self.timings['adjacency'] = round(time.time() - t_adj, 1)
         # internal boundaries that found no neighbour become adiabatic; an
         # adiabatic face cannot carry doors/apertures, so those are dropped

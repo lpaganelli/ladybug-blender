@@ -260,15 +260,35 @@ def run(model, epw_path, folder, energyplus_path, outputs=DEFAULT_OUTPUTS, times
     t0 = time.time()
     idf = write_idf(model, epw_path, folder, outputs, timestep, run_period)
     sql, zsz, rdd, html, err = run_idf(idf, epw_path, expand_objects=True, silent=True)
-    if sql is None:
+    fatal = []
+    if err and os.path.isfile(err):
+        with open(err, encoding='utf-8', errors='ignore') as f:
+            for ln in f:
+                if '** Severe  **' in ln or '**  Fatal  **' in ln:
+                    fatal.append(ln.strip().replace('** Severe  ** ', '').replace(
+                        '**  Fatal  ** ', ''))
+    if sql is None or any('Fatal' in ln or 'terminates' in ln for ln in fatal):
         msg = 'EnergyPlus failed'
-        if err and os.path.isfile(err):
-            with open(err, encoding='utf-8', errors='ignore') as f:
-                severe = [ln.strip() for ln in f if 'Severe' in ln or 'Fatal' in ln]
-            if severe:
-                msg += ': ' + ' | '.join(severe[:5])
+        if fatal:
+            msg += ': ' + ' | '.join(fatal[:4])
         raise RuntimeError(msg)
     return sql, err, time.time() - t0
+
+
+def scene_shades_from_faces(face_lists):
+    """Honeybee Shades from lists of (x, y, z) vertex tuples (edited context)."""
+    from honeybee.shade import Shade
+    from ladybug_geometry.geometry3d import Face3D, Point3D
+    shades = []
+    for i, verts in enumerate(face_lists):
+        try:
+            g = Face3D([Point3D(*v) for v in verts])
+            if g.area < 0.01:
+                continue
+            shades.append(Shade('Context_{}'.format(i), g, is_detached=True))
+        except Exception:  # noqa: BLE001
+            continue
+    return shades
 
 
 def read_results(sql_path, model, output='Zone Operative Temperature',

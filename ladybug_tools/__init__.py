@@ -10,7 +10,7 @@ natively with numpy and Blender's BVHTree.
 bl_info = {
     'name': 'Ladybug Tools',
     'author': 'Leandro',
-    'version': (0, 6, 1),
+    'version': (0, 6, 2),
     'blender': (4, 2, 0),
     'location': 'View3D > Sidebar > Ladybug',
     'description': 'Sun path, solar radiation and climate analysis (Ladybug Tools)',

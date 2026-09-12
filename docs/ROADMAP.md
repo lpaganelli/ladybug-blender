@@ -112,6 +112,13 @@ se não existir como zona no IFC: crie uma Zona "Ático" no ArchiCAD entre a
 laje e o telhado para que a laje troque calor com o forro em vez de ficar
 exposta ao exterior.
 
+v0.6.2: pares internos recebem a mesma construção (ou invertida) nos dois
+lados, exigência do EnergyPlus; os beirais e as partes de telhados/lajes/paredes
+que sobram além dos rooms entram como sombra (diferença booleana coplanar);
+o contexto é lido de volta da cena ao simular, então `HB Context` (e qualquer
+malha com a propriedade `hb_shade`) pode ser editado à mão. Com os três
+áticos do IFC: 15 zonas, 7 dias em 160 s.
+
 Pendências:
 
 - **Tempo**: o custo restante é o sombreamento de muros e paredes sem zona
