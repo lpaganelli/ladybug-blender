@@ -70,7 +70,9 @@ class LB_OT_energy_simulate(bpy.types.Operator):
             progress(0.05)
             kinds = energy_sim.prepare_model(
                 model, hvac=p.en_hvac, vent_min_indoor=p.en_vent_min_indoor,
-                vent_min_outdoor=p.en_vent_min_outdoor, vent_max_outdoor=p.en_vent_max_outdoor)
+                vent_min_outdoor=p.en_vent_min_outdoor, vent_max_outdoor=p.en_vent_max_outdoor,
+                operable_fraction=p.en_operable_default,
+                window_openings=energy_sim.parse_window_openings(p.en_window_openings))
             progress(0.1)
             run_period = None
             days = os.environ.get('LB_ENERGY_DAYS')  # short runs for automated tests

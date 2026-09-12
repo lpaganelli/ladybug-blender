@@ -37,6 +37,7 @@ SPACE_KINDS = (
     ('kitchen', ('cozinha', 'copa', 'kitchen')),
     ('bath', ('banh', 'w.c', 'wc', 'lavabo', 'bath', 'toilet')),
     ('garage', ('garagem', 'garage', 'abrigo')),
+    ('attic', ('atico', 'ático', 'forro', 'sotao', 'sótão', 'attic', 'plenum', 'entreforro')),
     ('service', ('lavanderia', 'varal', 'servi', 'circul', 'hall', 'corredor',
                  'depos', 'despensa', 'laundry', 'storage', 'corridor')),
 )
@@ -75,6 +76,7 @@ def residential_programs():
         'bath': _sched('Res Bath Occ', _hours(0.0, h6_8=1.0, h21_23=1.0)),
         'service': _sched('Res Service Occ', _hours(0.0, h9_10=0.5, h15_16=0.5)),
         'garage': _sched('Res Garage Occ', _hours(0.0)),
+        'attic': _sched('Res Attic Occ', _hours(0.0)),
     }
     lights = {
         'bedroom': _sched('Res Bedroom Lights', _hours(0.0, h6_8=0.5, h19_23=1.0)),
@@ -83,6 +85,7 @@ def residential_programs():
         'bath': _sched('Res Bath Lights', _hours(0.0, h6_8=1.0, h21_23=1.0)),
         'service': _sched('Res Service Lights', _hours(0.0, h9_10=0.5, h18_20=0.5)),
         'garage': _sched('Res Garage Lights', _hours(0.0, h18_20=0.3)),
+        'attic': _sched('Res Attic Lights', _hours(0.0)),
     }
     equip = {
         'bedroom': _sched('Res Bedroom Equip', _hours(0.2, h20_24=0.6)),
@@ -91,6 +94,7 @@ def residential_programs():
         'bath': _sched('Res Bath Equip', _hours(0.0, h6_8=1.0, h21_23=1.0)),
         'service': _sched('Res Service Equip', _hours(0.1, h9_11=1.0)),
         'garage': _sched('Res Garage Equip', _hours(0.0)),
+        'attic': _sched('Res Attic Equip', _hours(0.0)),
     }
     always = _sched('Res Always On', _hours(1.0))
     activity = _sched('Res Activity 110W', _hours(110.0), activity_level)
@@ -106,6 +110,7 @@ def residential_programs():
         'bath': (0.10, 8.0, 5.0, 0.0002),
         'service': (0.03, 4.0, 4.0, 0.0003),
         'garage': (0.0, 2.0, 1.0, 0.0010),
+        'attic': (0.0, 0.0, 0.0, 0.0030),  # ventilated roof space: leaky, no loads
     }
     programs = {}
     for kind, (ppl, lgt, eqp, inf) in loads.items():
@@ -120,20 +125,53 @@ def residential_programs():
     return programs
 
 
+def parse_window_openings(text):
+    """'JA01=0, JA02=0.5, JA04=0.75' -> {'JA01': 0.0, ...} (fractions of operable area)."""
+    out = {}
+    for part in re.split(r'[,;\n]+', text or ''):
+        if '=' not in part:
+            continue
+        key, val = part.split('=', 1)
+        try:
+            v = float(val.strip().replace('%', ''))
+        except ValueError:
+            continue
+        if v > 1.0:  # percentages
+            v /= 100.0
+        out[key.strip().upper()] = max(0.0, min(v, 1.0))
+    return out
+
+
+def operable_fraction_for(aperture, openings, default=0.5):
+    """Operable fraction of an aperture from its (IFC) name and a name -> fraction map."""
+    name = (aperture.display_name or aperture.identifier or '').upper()
+    best, best_len = None, -1
+    for key, frac in openings.items():
+        if key and key in name and len(key) > best_len:
+            best, best_len = frac, len(key)
+    return default if best is None else best
+
+
 def prepare_model(model, hvac='FREE_RUNNING', vent_min_indoor=22.0,
-                  vent_min_outdoor=16.0, vent_max_outdoor=32.0, operable_fraction=0.5):
+                  vent_min_outdoor=16.0, vent_max_outdoor=32.0, operable_fraction=0.5,
+                  window_openings=None):
     """Assign residential programs and either natural ventilation or ideal air.
+
+    ``window_openings`` maps window names (or name prefixes, e.g. the IFC
+    type 'JA02') to the fraction of their area that opens; 0 means fixed
+    glazing. Windows not listed use ``operable_fraction``.
 
     Returns a dict room identifier -> space kind.
     """
     programs = residential_programs()
+    openings = window_openings or {}
     kinds = {}
     for room in model.rooms:
         kind = classify_space(room.display_name or room.identifier)
         kinds[room.identifier] = kind
         room.properties.energy.program_type = programs[kind]
         if hvac == 'IDEAL_AIR':
-            if kind not in ('garage', 'service'):
+            if kind not in ('garage', 'service', 'attic'):
                 room.properties.energy.add_default_ideal_air()
         else:  # free running: windows open when it is warm inside and mild outside
             room.properties.energy.hvac = None
@@ -143,10 +181,15 @@ def prepare_model(model, hvac='FREE_RUNNING', vent_min_indoor=22.0,
                 max_outdoor_temperature=vent_max_outdoor)
             for face in room.faces:
                 for ap in face.apertures:
-                    if ap.boundary_condition.name == 'Outdoors':
-                        ap.is_operable = True
-                        ap.properties.energy.vent_opening = VentilationOpening(
-                            fraction_area_operable=operable_fraction)
+                    if ap.boundary_condition.name != 'Outdoors':
+                        continue
+                    frac = operable_fraction_for(ap, openings, operable_fraction)
+                    if frac <= 0:
+                        ap.is_operable = False
+                        continue
+                    ap.is_operable = True
+                    ap.properties.energy.vent_opening = VentilationOpening(
+                        fraction_area_operable=frac)
     return kinds
 
 

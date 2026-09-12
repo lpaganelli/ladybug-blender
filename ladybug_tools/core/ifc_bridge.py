@@ -660,6 +660,11 @@ class IfcToHoneybee(object):
                 if len(tris) <= merge_limit:  # coplanar merge is quadratic
                     merged = merge_coplanar(tris, self.tol)
                 merged = [g for g in merged if _is_sound(g, self.tol, min_area=0.05)]
+                if box is not None:
+                    floor_z = box[2] + reach  # lowest room level
+                    # undersides and surfaces below the rooms cannot shade them
+                    merged = [g for g in merged
+                              if g.normal.z > -0.7 and g.max.z > floor_z + 0.3]
                 for i, g in enumerate(merged):
                     sh = Shade(_ident('{}_{}_{}'.format(cls, el.id(), i)), g, is_detached=True)
                     sh.display_name = el.Name or cls

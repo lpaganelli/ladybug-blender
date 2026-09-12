@@ -106,6 +106,9 @@ the Reinhart dome:
 | clear-sky June | 0.993 | +0.06 % | within 0.9 % |
 | cloudy annual (Zhang-Huang) | 0.998 | +0.32 % | within 0.9 % |
 
+With a measured TMYx file (Barretos, Brazil, 2011-2025) the patch correlation
+is 0.991-0.996, totals within 0.4 % and all six surfaces within 1.3 %.
+
 The diffuse component matches to 0.1 % per patch; the direct component
 differs only in how the sun is spread over the nearest patches (gendaymtx
 lights up to four, this port three), which averages out on any surface.

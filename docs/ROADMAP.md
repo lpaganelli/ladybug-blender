@@ -104,11 +104,18 @@ Casa térrea de teste: 12 zonas, ano inteiro em 9 min (558 s) com 776
 superfícies de sombreamento; 7 dias em 104 s. Resultados coerentes: Sala com
 pé-direito duplo e vidro é a mais quente e a mais fria; garagem fria.
 
+v0.6.1: fração operável por tipo de janela (`JA01=0, JA02=0.5, JA04=0.75`),
+espaço "ático/forro" como tipo de zona sem cargas e muito ventilada, e contexto
+sem faces viradas para baixo nem abaixo do nível dos ambientes (776 → 479
+superfícies; 7 dias em 66 s). O ático entre laje e telhado **não** é modelado
+se não existir como zona no IFC: crie uma Zona "Ático" no ArchiCAD entre a
+laje e o telhado para que a laje troque calor com o forro em vez de ficar
+exposta ao exterior.
+
 Pendências:
 
-- **Tempo**: o custo é o sombreamento do contexto (telhado em centenas de
-  peças). Mesclar planos coplanares entre elementos, descartar lajes internas
-  e peças pequenas; já sem reflexões e com sombras a cada 30 dias.
+- **Tempo**: o custo restante é o sombreamento de muros e paredes sem zona
+  (409 faces). Mesclar planos coplanares entre elementos.
 - Rodar via `pyenergyplus` in-process com barra de progresso, em vez de
   bloquear o Blender durante a simulação (`subprocess` hoje).
 - Programas e horários editáveis no painel; programas por norma (NBR 15575)

@@ -23,9 +23,22 @@ p.epw_path = epw
 p.hb_ifc_path = ifc
 p.en_ep_path = ep_dir
 p.en_folder = os.path.join(HERE, 'out', 'energy_op')
+p.en_window_openings = 'JA01=0, JA02=75%'
 assert bpy.ops.ladybug.ifc_to_honeybee() == {'FINISHED'}
 assert bpy.ops.ladybug.energy_simulate() == {'FINISHED'}
 from ladybug_tools.ops.energy import _LAST_RUN  # noqa: E402
+from ladybug_tools.ops.honeybee import _LAST_MODEL  # noqa: E402
+model = _LAST_MODEL['model']
+aps = [ap for r in model.rooms for f in r.faces for ap in f.apertures
+       if ap.boundary_condition.name == 'Outdoors']
+fixed = [ap for ap in aps if ap.display_name.upper().startswith('JA01')]
+wide = [ap for ap in aps if ap.display_name.upper().startswith('JA02')]
+assert fixed and all(not ap.is_operable for ap in fixed), 'JA01 should be fixed'
+assert wide and all(abs(ap.properties.energy.vent_opening.fraction_area_operable - 0.75) < 1e-6
+                    for ap in wide), 'JA02 should open 75%'
+print('window openings:', {ap.display_name: (ap.is_operable and
+      ap.properties.energy.vent_opening.fraction_area_operable) for ap in aps})
+print('context shades:', len(model.orphaned_shades))
 summary = _LAST_RUN['summary']
 assert summary and all(5 < s['mean'] < 40 for s in summary.values())
 rooms = [o for o in bpy.data.objects if o.get('hb_room') and 'openings' not in o.name]

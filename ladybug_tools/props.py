@@ -180,6 +180,13 @@ class LBSceneProps(bpy.types.PropertyGroup):
     en_vent_min_indoor: FloatProperty(name='Open Above (indoor)', default=22.0)
     en_vent_min_outdoor: FloatProperty(name='Outdoor Min', default=16.0)
     en_vent_max_outdoor: FloatProperty(name='Outdoor Max', default=32.0)
+    en_operable_default: FloatProperty(
+        name='Operable Fraction', default=0.5, min=0.0, max=1.0,
+        description='Share of each window area that opens (windows not listed below)')
+    en_window_openings: StringProperty(
+        name='Windows', default='',
+        description='Per window type, name=fraction: e.g. "JA01=0, JA02=0.5, JA04=0.75" '
+                    '(0 = fixed glazing). Names match the IFC window names as prefixes')
     en_comfort_low: FloatProperty(name='Comfort Min', default=18.0)
     en_comfort_high: FloatProperty(name='Comfort Max', default=26.0)
     en_metric: EnumProperty(
