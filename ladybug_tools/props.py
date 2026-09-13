@@ -160,6 +160,10 @@ class LBSceneProps(bpy.types.PropertyGroup):
         description='Comma-separated words; spaces whose name contains one are skipped')
     hb_context: BoolProperty(name='Context Shades', default=True,
                              description='Add unbounded roofs, slabs and walls as shading')
+    hb_glass_doors: StringProperty(
+        name='Glass Doors', default='',
+        description='Door names that are glazed, e.g. "PA06, PA09"; prefix - for opaque '
+                    '("-PA10"). Unlisted exterior sliding/pivot doors are assumed glazed')
     hb_ground_level: FloatProperty(name='Ground Level', default=0.0, unit='LENGTH',
                                    description='Floors at or below this height touch the ground')
     hb_draw: BoolProperty(name='Draw Rooms', default=True)

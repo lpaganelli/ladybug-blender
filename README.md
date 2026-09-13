@@ -5,7 +5,7 @@ inside Blender 4.2+ / 5.x, packaged as a Blender **Extension**. A port of the
 [Ladybug Tools](https://www.ladybug.tools/) workflows, with no Radiance,
 Rhino or Grasshopper required.
 
-*Português: [README.pt-BR.md](README.pt-BR.md) · guia de análise: [docs/GUIA.md](docs/GUIA.md)*
+*Português: [README.pt-BR.md](README.pt-BR.md) · guia de análise: [docs/GUIA.md](docs/GUIA.md) · exportar IFC do ArchiCAD: [docs/IFC_ARCHICAD.md](docs/IFC_ARCHICAD.md)*
 
 ![Test scene: sun path, direct sun hours with a tower shadow, radiation rose, sky dome and wind rose](docs/images/render_top.png)
 

@@ -224,6 +224,7 @@ class LB_PT_honeybee(LBPanel, bpy.types.Panel):
         row.operator('ladybug.ifc_pick', text='', icon='FILEBROWSER')
         col = layout.column(align=True)
         col.prop(p, 'hb_exclude')
+        col.prop(p, 'hb_glass_doors', placeholder='PA06, PA09, -PA10')
         col.prop(p, 'hb_ground_level')
         col.prop(p, 'hb_context')
         col.prop(p, 'hb_draw')

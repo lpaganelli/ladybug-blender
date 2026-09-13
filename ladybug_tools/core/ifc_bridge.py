@@ -49,7 +49,7 @@ from honeybee_energy.construction.window import WindowConstruction
 TOL = 0.01
 ANGLE_TOL = 1.0
 EXCLUDE_DEFAULT = ('piscina', 'pool')
-CONTEXT_CLASSES = ('IfcRoof', 'IfcSlab', 'IfcWall', 'IfcColumn', 'IfcCurtainWall')
+CONTEXT_CLASSES = ('IfcRoof', 'IfcSlab', 'IfcWall', 'IfcColumn', 'IfcBeam', 'IfcMember', 'IfcCurtainWall')
 
 
 def _ident(text, prefix=''):
@@ -173,10 +173,15 @@ def merge_coplanar(faces, tol=TOL, angle_tol=0.02):
         if len(members) == 1:
             out.append(members[0])
             continue
+        target = sum(m.area for m in members)
         try:
             joined = Face3D.join_coplanar_faces(members, tol)
         except Exception:  # noqa: BLE001
             joined = []
+        if not joined or abs(sum(j.area for j in joined) - target) > 0.05 * target:
+            # edge joining fails on triangulations with T-junctions (CSG bodies):
+            # fall back to a boolean union in the plane
+            joined = _union_coplanar(members, tol, target)
         if not joined:
             out.extend(members)
             continue
@@ -186,6 +191,51 @@ def merge_coplanar(faces, tol=TOL, angle_tol=0.02):
             except Exception:  # noqa: BLE001
                 out.append(j)
     return out
+
+
+def _convex_pieces(face, tol):
+    """Convex, hole-free, planar pieces of a face for EnergyPlus shading.
+
+    EnergyPlus writes faces with holes as one self-touching polygon and its
+    shadow clipping (Sutherland-Hodgman) is only exact for convex casters;
+    non-convex casters are flagged severe and slow the run down.
+    """
+    # holes are window/door openings: for shading the wall is solid anyway
+    p = Face3D(face.boundary, face.plane) if face.has_holes else face
+    if not p.is_self_intersecting:
+        return [p]  # non-convex is tolerated (a severe warning, not an error)
+    try:
+        mesh = p.triangulated_mesh3d
+        tris = [Face3D(tuple(mesh.vertices[k] for k in f)) for f in mesh.faces]
+    except Exception:  # noqa: BLE001
+        return []
+    return [t for t in tris if _is_sound(t, tol, min_area=0.05)]
+
+
+def _union_coplanar(members, tol, target_area):
+    """Boolean union of coplanar faces, as Face3Ds with holes; [] on failure."""
+    from ladybug_geometry.geometry2d import Polygon2D
+    plane = members[0].plane
+    polys = []
+    for m in members:
+        polys.append(Polygon2D(tuple(plane.xyz_to_xy(v) for v in m.boundary)))
+        for hole in (m.holes or ()):
+            polys.append(Polygon2D(tuple(plane.xyz_to_xy(v) for v in hole)))
+    try:
+        union = Polygon2D.boolean_union_all(polys, tol)
+        if not union:
+            return []
+        faces = [Face3D(tuple(plane.xy_to_xyz(v) for v in p.vertices), plane=plane)
+                 for p in union if p.area > tol * tol]
+        faces = Face3D.merge_faces_to_holes(faces, tol)
+    except Exception:  # noqa: BLE001
+        return []
+    got = sum(f.area for f in faces)
+    if not faces or abs(got - target_area) > 0.05 * target_area:
+        return []
+    if any(f.is_self_intersecting for f in faces):
+        return []
+    return faces
 
 
 def element_faces(f, element, settings, scale_already=True):
@@ -260,6 +310,26 @@ class ConstructionLibrary(object):
             return None
         if mat.is_a('IfcMaterialLayerSetUsage'):
             mat = mat.ForLayerSet
+        if mat.is_a('IfcMaterialProfileSetUsage'):
+            mat = mat.ForProfileSet
+        if mat.is_a('IfcMaterialProfileSet'):
+            # walls exported as profile extrusions (ArchiCAD "parametric" bodies)
+            # lose their layers; recover the layer set with the same name,
+            # "Alvenaria 140 (190 x 1590)" -> "Alvenaria 140"
+            base = re.sub(r'\s*\([^)]*\)\s*$', '', mat.Name or '')
+            layer_set = next((ls for ls in self.f.by_type('IfcMaterialLayerSet')
+                              if (ls.LayerSetName or '') == base), None)
+            if layer_set is not None:
+                mat = layer_set
+            else:
+                m = re.search(r'\((\d+(?:\.\d+)?)\s*[x×]', mat.Name or '')
+                thick = float(m.group(1)) if m else None
+                if thick is not None:
+                    default_thickness = thick / 1000.0 if thick > 5 else thick
+                profiles = [p.Material for p in (mat.MaterialProfiles or []) if p.Material]
+                mat = profiles[0] if profiles else None
+                if mat is None:
+                    return None
         layers = []
         if mat.is_a('IfcMaterialLayerSet'):
             for layer in mat.MaterialLayers:
@@ -329,9 +399,18 @@ class IfcToHoneybee(object):
     """
 
     def __init__(self, ifc_path, exclude=EXCLUDE_DEFAULT, include_context=True,
-                 ground_level=0.0, tolerance=TOL, context_reach=10.0):
+                 ground_level=0.0, tolerance=TOL, context_reach=10.0, glass_doors=''):
         self.path = ifc_path
         self.exclude = tuple(e.lower() for e in exclude)
+        # door names that are glazed ("PA06, PA09") or explicitly not ("-PA10");
+        # unlisted exterior sliding/pivot doors are assumed glazed
+        self.glass_doors, self.opaque_doors = set(), set()
+        for tok in (glass_doors or '').replace(';', ',').split(','):
+            tok = tok.strip().upper()
+            if tok.startswith('-'):
+                self.opaque_doors.add(tok[1:].strip())
+            elif tok:
+                self.glass_doors.add(tok)
         self.include_context = include_context
         self.context_reach = context_reach
         self.ground_level = ground_level
@@ -500,33 +579,57 @@ class IfcToHoneybee(object):
 
         # ---- windows / doors ----
         for rel, el, g in subs:
-            parent = self._parent_face(room.faces, g)
-            if parent is None:
+            hosts = self._host_faces(room.faces, g)
+            if not hosts:
                 counts['orphan_openings'] += 1
                 self.warnings.append('{}: no host face for {} "{}"'.format(name, el.is_a(), el.Name))
                 continue
-            gp = self._project_onto(parent.geometry, g)
-            if gp is None:
+            placed = 0
+            for k, parent in enumerate(hosts):
+                # an opening across two wall faces (a pilaster splits the wall)
+                # is clipped to each of them
+                gp = self._project_onto(parent.geometry, g, clip=len(hosts) > 1)
+                if gp is None:
+                    continue
+                gp = self._clear_overlap(gp, parent)
+                if gp is None:  # exported twice, or overlapping boundaries
+                    counts['duplicate_openings'] += 1
+                    continue
+                try:
+                    gp = gp.remove_colinear_vertices(self.tol)
+                except Exception:  # noqa: BLE001
+                    pass
+                pieces = [gp]
+                if el.is_a('IfcDoor') and len(gp.vertices) > 4:
+                    # EnergyPlus fenestration takes 4 vertices at most; honeybee
+                    # triangulates but its pieces lose is_glass, so split here
+                    mesh = gp.triangulated_mesh3d
+                    pieces = [Face3D(tuple(mesh.vertices[j] for j in f), gp.plane)
+                              for f in mesh.faces]
+                    pieces = [t for t in pieces if _is_sound(t, self.tol, 0.01)]
+                for j, piece in enumerate(pieces):
+                    ident = _ident('{}_{}_{}_{}_{}'.format(parent.identifier, el.Name, rel.id(), k, j))
+                    if el.is_a('IfcDoor'):
+                        glass = self._is_glass_door(el, rel)
+                        obj = Door(ident, piece, is_glass=glass)
+                        if glass:
+                            obj.properties.energy.construction = self.lib.window_construction(el)
+                            counts['glass_doors'] += 1
+                        else:
+                            obj.properties.energy.construction = self.lib.construction_for(el) or \
+                                parent.properties.energy.construction
+                        parent.add_door(obj)
+                        counts['doors'] += 1
+                    else:
+                        obj = Aperture(ident, piece)
+                        obj.properties.energy.construction = self.lib.window_construction(el)
+                        parent.add_aperture(obj)
+                        counts['apertures'] += 1
+                    obj.display_name = el.Name
+                    obj.user_data = {'ifc_guid': el.GlobalId, 'ifc_class': el.is_a()}
+                placed += 1
+            if not placed and not counts.get('duplicate_openings'):
                 counts['orphan_openings'] += 1
-                continue
-            # skip duplicates (a window exported twice, or overlapping boundaries)
-            if any(gp.is_overlapping(s.geometry, self.tol) for s in parent.sub_faces):
-                counts['duplicate_openings'] += 1
-                continue
-            ident = _ident('{}_{}_{}'.format(parent.identifier, el.Name, rel.id()))
-            if el.is_a('IfcDoor'):
-                obj = Door(ident, gp, is_glass=False)
-                obj.properties.energy.construction = self.lib.construction_for(el) or \
-                    parent.properties.energy.construction
-                parent.add_door(obj)
-                counts['doors'] += 1
-            else:
-                obj = Aperture(ident, gp)
-                obj.properties.energy.construction = self.lib.window_construction(el)
-                parent.add_aperture(obj)
-                counts['apertures'] += 1
-            obj.display_name = el.Name
-            obj.user_data = {'ifc_guid': el.GlobalId, 'ifc_class': el.is_a()}
 
         room.display_name = name
         room.story = self._storey_name(space)
@@ -549,12 +652,11 @@ class IfcToHoneybee(object):
         coincident faces, so this does the pairing geometrically.
         """
         pairs, air = 0, 0
-        # internal faces, plus faces that matched no boundary at all (open-plan
-        # zone limits without a wall are exported without a boundary by some tools)
+        # every face that is not already paired or on the ground: the exporter's
+        # INTERNAL/EXTERNAL flag is not trusted (ArchiCAD marks a ceiling under
+        # an attic zone EXTERNAL), what counts is a facing room face nearby
         candidates = [(r, f) for r in rooms for f in r.faces
-                      if ((f.user_data or {}).get('internal') or
-                          not (f.user_data or {}).get('matched'))
-                      and f.boundary_condition.name != 'Surface']
+                      if f.boundary_condition.name not in ('Surface', 'Ground')]
         for i, (ra, fa) in enumerate(candidates):
             if fa.boundary_condition.name == 'Surface':
                 continue
@@ -622,25 +724,42 @@ class IfcToHoneybee(object):
         c = ue.get_container(space)
         return c.Name if c is not None else None
 
-    def _parent_face(self, faces, g):
-        best, best_d = None, None
+    def _host_faces(self, faces, g):
+        """Wall/roof faces of the room that a window/door boundary lies on.
+
+        Usually one; two when the opening straddles a split in the wall
+        (a pilaster or a zone notch divides the wall into two faces).
+        """
+        from ladybug_geometry.geometry2d import Polygon2D
+        hosts = []
         for face in faces:
             if face.type != face_types.wall and face.type != face_types.roof_ceiling:
                 continue
             plane = face.geometry.plane
-            if abs(plane.n.dot(g.normal)) < 0.95 and abs(plane.n.dot(g.normal)) > -0.95:
-                if abs(abs(plane.n.dot(g.normal)) - 1) > 0.05:
-                    continue
+            if abs(abs(plane.n.dot(g.normal)) - 1) > 0.05:
+                continue
             d = abs(plane.distance_to_point(g.center))
             if d > 0.3:
                 continue
-            if not face.geometry.is_point_on_face(plane.closest_point(g.center), self.tol * 10):
+            if face.geometry.is_point_on_face(plane.closest_point(g.center), self.tol * 10):
+                hosts.append((0, d, face))
                 continue
-            if best is None or d < best_d:
-                best, best_d = face, d
-        return best
+            # not centered on this face: does it still overlap it?
+            try:
+                fp = face.geometry.boundary_polygon2d
+                gp = Polygon2D(tuple(plane.xyz_to_xy(plane.closest_point(p)) for p in g.boundary))
+                inter = fp.boolean_intersect(gp, self.tol)
+                area = sum(p.area for p in inter)
+            except Exception:  # noqa: BLE001
+                area = 0.0
+            if area > max(0.05, 0.1 * g.area):
+                hosts.append((1, d, face))
+        hosts.sort(key=lambda h: (h[0], h[1]))
+        return [h[2] for h in hosts]
 
-    def _project_onto(self, parent_geo, g):
+    def _project_onto(self, parent_geo, g, clip=False):
+        """Boundary projected onto the host face plane, clipped to the face if asked."""
+        from ladybug_geometry.geometry2d import Polygon2D
         plane = parent_geo.plane
         pts = [plane.closest_point(p) for p in g.boundary]
         try:
@@ -650,6 +769,20 @@ class IfcToHoneybee(object):
             return None
         if proj.normal.dot(parent_geo.normal) < 0:
             proj = proj.flip()
+        if clip and not parent_geo.is_sub_face(proj, self.tol, ANGLE_TOL):
+            try:
+                fp = parent_geo.boundary_polygon2d
+                qp = Polygon2D(tuple(plane.xyz_to_xy(p) for p in proj.boundary))
+                pieces = [Face3D(tuple(plane.xy_to_xyz(v) for v in poly.vertices), plane)
+                          for poly in fp.boolean_intersect(qp, self.tol)]
+                pieces = [p for p in pieces if p.area >= 0.05]
+            except Exception:  # noqa: BLE001
+                pieces = []
+            if not pieces:
+                return None
+            proj = max(pieces, key=lambda p: p.area)
+            if proj.normal.dot(parent_geo.normal) < 0:
+                proj = proj.flip()
         if not parent_geo.is_sub_face(proj, self.tol, ANGLE_TOL):
             # shrink slightly towards its center to clear coincident edges
             c = proj.center
@@ -658,6 +791,37 @@ class IfcToHoneybee(object):
             if not parent_geo.is_sub_face(proj, self.tol, ANGLE_TOL):
                 return None
         return proj
+
+    def _clear_overlap(self, gp, parent, max_shrink=0.12):
+        """Shrink a sub-face a little when it overlaps an existing one (frames
+        touching, e.g. a window right above another); None if it is a duplicate."""
+        existing = [s.geometry for s in parent.sub_faces]
+        if not any(gp.is_overlapping(s, self.tol) for s in existing):
+            return gp
+        c = gp.center
+        for k in range(1, 7):
+            factor = k * max_shrink / 6.0
+            shrunk = Face3D([p.move((c - p) * factor) for p in gp.boundary], gp.plane)
+            if not any(shrunk.is_overlapping(s, self.tol) for s in existing):
+                return shrunk
+        return None
+
+    def _is_glass_door(self, el, rel):
+        """Glazed door: listed by name, or an exterior sliding/pivot door."""
+        name = (el.Name or '').upper()
+        if name in self.opaque_doors:
+            return False
+        if name in self.glass_doors:
+            return True
+        if rel.InternalOrExternalBoundary != 'EXTERNAL':
+            return False
+        typ = ue.get_type(el)
+        words = ' '.join(filter(None, [
+            el.Name, el.ObjectType, el.Description,
+            typ.Name if typ else '', typ.Description if typ else '',
+            str(getattr(typ, 'OperationType', '') or ''),
+            str(getattr(el, 'OperationType', '') or '')])).lower()
+        return any(w in words for w in ('correr', 'sliding', 'vidro', 'glass', 'pivot'))
 
     # ---- context ----
     def _context_shades(self, bounded_ids, merge_limit=2000, rooms=None, reach=None):
@@ -679,7 +843,19 @@ class IfcToHoneybee(object):
         # room faces per plane, to subtract from bounded elements (roof eaves,
         # walls extending past the zones) so only their exposed parts shade
         room_faces = [f.geometry for r in (rooms or []) for f in r.faces]
+        room_geos = [r.geometry for r in (rooms or [])]
+
+        def inside_room(pt):
+            for g in room_geos:
+                if (g.min.x - self.tol <= pt.x <= g.max.x + self.tol and
+                        g.min.y - self.tol <= pt.y <= g.max.y + self.tol and
+                        g.min.z - self.tol <= pt.z <= g.max.z + self.tol and
+                        g.is_point_inside(pt)):
+                    return True
+            return False
+
         for cls in CONTEXT_CLASSES:
+            cls_faces = []
             for el in self.f.by_type(cls):
                 bounded = el.id() in bounded_ids
                 if bounded and cls not in ('IfcRoof', 'IfcSlab', 'IfcWall'):
@@ -706,10 +882,19 @@ class IfcToHoneybee(object):
                 if bounded:
                     # keep only what sticks out beyond the room faces (eaves)
                     merged = self._subtract_room_faces(merged, room_faces)
-                for i, g in enumerate(merged):
-                    sh = Shade(_ident('{}_{}_{}'.format(cls, el.id(), i)), g, is_detached=True)
-                    sh.display_name = el.Name or cls
-                    sh.user_data = {'ifc_guid': el.GlobalId, 'ifc_class': cls}
+                cls_faces.extend(merged)
+            # join coplanar pieces across elements (adjacent walls, slab strips)
+            # and drop what lies inside a zone: it cannot shade the outside
+            if len(cls_faces) <= merge_limit:
+                cls_faces = merge_coplanar(cls_faces, self.tol)
+            for i, g in enumerate(cls_faces):
+                if not _is_sound(g, self.tol, min_area=0.1) or inside_room(g.center):
+                    continue
+                pieces = _convex_pieces(g, self.tol)
+                for j, piece in enumerate(pieces):
+                    sh = Shade(_ident('{}_{}_{}'.format(cls, i, j)), piece, is_detached=True)
+                    sh.display_name = cls[3:]
+                    sh.user_data = {'ifc_class': cls}
                     shades.append(sh)
         return shades
 
@@ -796,6 +981,13 @@ class IfcToHoneybee(object):
         self.timings['rooms'] = round(time.time() - t_rooms, 1)
 
         t_adj = time.time()
+        # split coincident faces so a slab under several rooms (attic floor)
+        # gets one piece per room; walls across a thickness are not coincident
+        # and are paired by _pair_internal_faces
+        try:
+            Room.intersect_adjacency(rooms, self.tol, ANGLE_TOL)
+        except Exception as exc:  # noqa: BLE001
+            self.warnings.append('coplanar split failed: {}'.format(exc))
         adj = Room.solve_adjacency(rooms, self.tol)
         n_adj = len(adj.get('adjacent_faces', []))
         n_adj += self._pair_internal_faces(rooms)
@@ -835,6 +1027,7 @@ class IfcToHoneybee(object):
             'faces': sum(len(r.faces) for r in rooms),
             'apertures': sum(len(f.apertures) for r in rooms for f in r.faces),
             'doors': sum(len(f.doors) for r in rooms for f in r.faces),
+            'glass_doors': sum(1 for r in rooms for f in r.faces for d in f.doors if d.is_glass),
             'adjacent_pairs': n_adj, 'adiabatic': n_adiabatic,
             'boundary_conditions': dict(bc_counts), 'face_types': dict(type_counts),
             'shades': len(shades),

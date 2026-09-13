@@ -5,6 +5,8 @@
 Porte das ferramentas de análise ambiental do [Ladybug Tools](https://www.ladybug.tools/)
 para o Blender (4.2+ / 5.x), empacotado como **Extension**.
 
+*Guia de análise: [docs/GUIA.md](docs/GUIA.md) · exportar o IFC do ArchiCAD: [docs/IFC_ARCHICAD.md](docs/IFC_ARCHICAD.md) · roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)*
+
 As bibliotecas Python puras do Ladybug (`ladybug-core`, `ladybug-geometry`,
 `ladybug-radiance`, `ladybug-comfort`, `ladybug-display`) vão embutidas como
 wheels. As partes que no Ladybug original dependem do Radiance foram

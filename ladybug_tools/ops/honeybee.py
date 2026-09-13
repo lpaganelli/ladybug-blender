@@ -60,7 +60,7 @@ class LB_OT_ifc_to_honeybee(bpy.types.Operator):
         exclude = [s.strip().lower() for s in p.hb_exclude.split(',') if s.strip()]
         try:
             bridge = IfcToHoneybee(path, exclude=exclude, include_context=p.hb_context,
-                                   ground_level=p.hb_ground_level)
+                                   ground_level=p.hb_ground_level, glass_doors=p.hb_glass_doors)
             model = bridge.build()
         except Exception as exc:  # noqa: BLE001
             self.report({'ERROR'}, 'IFC bridge failed: {}'.format(exc))
@@ -74,9 +74,9 @@ class LB_OT_ifc_to_honeybee(bpy.types.Operator):
         if p.hb_draw:
             hb_viz.draw_model(context, model, p.hb_color_by)
         rep = bridge.report
-        msg = '{} rooms, {} faces, {} apertures, {} doors, {} shades | BC {} | {} warnings'.format(
-            rep['rooms_total'], rep['faces'], rep['apertures'], rep['doors'], rep['shades'],
-            rep['boundary_conditions'], len(rep['warnings']))
+        msg = '{} rooms, {} faces, {} apertures, {} doors ({} glass), {} shades | BC {} | {} warnings'.format(
+            rep['rooms_total'], rep['faces'], rep['apertures'], rep['doors'],
+            rep.get('glass_doors', 0), rep['shades'], rep['boundary_conditions'], len(rep['warnings']))
         for w in rep['warnings']:
             print('[Ladybug] IFC bridge:', w)
         self.report({'INFO'}, msg)

@@ -70,9 +70,11 @@ HBJSON. Testado com a casa térrea do escritório: 12 rooms, 98 faces, 3 s.
 Pendências da ponte:
 
 - Faces internas emparelhadas com áreas diferentes (uma parede de um quarto
-  encosta em dois vizinhos): dividir a face pela projeção do vizinho
-  (`Face3D.coplanar_split`) antes de emparelhar, ou mover ambas para o eixo
-  da parede.
+  encosta em dois vizinhos). Desde a v0.6.4 as faces **coincidentes** (laje
+  sob vários ambientes) são divididas por `Room.intersect_adjacency`; falta
+  o caso das paredes, cujas faces ficam a uma espessura de distância:
+  projetar a face do vizinho e dividir (`Face3D.coplanar_split`) ou mover
+  ambas para o eixo da parede.
 - Zonas sem parede entre si viram *AirBoundary* só quando coincidem; garagem
   aberta continua como Outdoors.
 - Aberturas sem face hospedeira (porta na esquina, boundary fora do plano) são
@@ -119,10 +121,35 @@ o contexto é lido de volta da cena ao simular, então `HB Context` (e qualquer
 malha com a propriedade `hb_shade`) pode ser editado à mão. Com os três
 áticos do IFC: 15 zonas, 7 dias em 160 s.
 
+v0.6.4: translator enxuto no ArchiCAD (ver `docs/IFC_ARCHICAD.md`: sem
+quantidades, filtro *Elementos Construtivos com Zonas*, geometria por
+extrusão) exporta em segundos em vez de travar. Com ele as paredes vêm como
+CSG e com `IfcMaterialProfileSet` em vez de camadas: a ponte recupera o
+`IfcMaterialLayerSet` de mesmo nome, e a mesclagem coplanar passa a cair numa
+união booleana quando a junção por arestas falha (triangulações com junções
+em T), agora também entre elementos e descartando o que fica dentro de uma
+zona. Sombras: 1117 → 468. Faces coincidentes são divididas por ambiente
+antes de emparelhar (`Room.intersect_adjacency`), e o emparelhamento passa a
+considerar todas as faces não pareadas, não só as marcadas INTERNAL (o
+ArchiCAD marca EXTERNAL o forro sob um ático): 30 pares internos em vez de 8,
+sem avisos de área diferente. Os dois IFCs (com e sem quantidades) geram o
+mesmo modelo. Portas de vidro (portas de correr/pivotantes externas, ou
+listadas em *Glass Doors*) viram `Door(is_glass=True)` com construção de
+vidro e abertura de ventilação; uma janela sobreposta a outra por poucos
+centímetros é encolhida em vez de descartada, e uma porta que cruza duas
+faces da parede é recortada em cada uma (JA04 e PA03 da Sala, antes
+perdidas). Vigas e `IfcMember` entram no contexto (pergolado); para
+sombreamento as paredes de contexto são sólidas (sem furos), porque faces
+com furos viram polígonos não convexos que o EnergyPlus marca como *severe*
+e que tornam o cálculo de sombra muito mais lento (3 dias: 466 s com furos, 81 s
+sem). A porta de vidro da cozinha muda o resultado: média de janeiro de
+27,3 °C para 25,4 °C.
+
 Pendências:
 
-- **Tempo**: o custo restante é o sombreamento de muros e paredes sem zona
-  (409 faces). Mesclar planos coplanares entre elementos.
+- **Tempo**: a conversão leva ~35 s, quase tudo na mesclagem do contexto
+  (uniões booleanas por elemento e por classe). Cachear por elemento ou
+  mesclar só o que sobra depois da subtração dos rooms.
 - Rodar via `pyenergyplus` in-process com barra de progresso, em vez de
   bloquear o Blender durante a simulação (`subprocess` hoje).
 - Programas e horários editáveis no painel; programas por norma (NBR 15575)

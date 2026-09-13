@@ -190,6 +190,15 @@ def prepare_model(model, hvac='FREE_RUNNING', vent_min_indoor=22.0,
                     ap.is_operable = True
                     ap.properties.energy.vent_opening = VentilationOpening(
                         fraction_area_operable=frac)
+                # glazed exterior doors (sliding doors) open too; listed by
+                # name like windows ("PA09=0.5"), default operable fraction
+                for dr in face.doors:
+                    if dr.boundary_condition.name != 'Outdoors' or not dr.is_glass:
+                        continue
+                    frac = operable_fraction_for(dr, openings, operable_fraction)
+                    if frac > 0:
+                        dr.properties.energy.vent_opening = VentilationOpening(
+                            fraction_area_operable=frac)
     return kinds
 
 
