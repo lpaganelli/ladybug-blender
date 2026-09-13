@@ -79,7 +79,11 @@ volume no IFC. Duas formas:
    e o topo da zona, se não houver elemento nenhum ali (limite virtual para
    o exterior), vira uma abertura envidraçada, a claraboia. O resto do forro
    continua como laje para o ático. Testado: Lavabo + zona Claraboia de
-   0,73 m² sobre a abertura.
+   0,73 m² sobre a abertura. A claraboia é fixa por padrão; uma claraboia
+   levantada, que ventila pela fresta, entra no campo *Windows* como
+   `Claraboia=0.25` (fração = perímetro × fresta ÷ área do vidro; 5 cm de
+   fresta em 85 × 85 cm dá 0,25) e fica aberta o ano todo, sem o controle
+   de temperatura das janelas.
 
 Sem isso, a abertura no forro não tem informação de vidro nem de volume, e o
 ambiente fica com um forro fechado para o ático.

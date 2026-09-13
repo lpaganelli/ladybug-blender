@@ -182,10 +182,16 @@ def prepare_model(model, hvac='FREE_RUNNING', vent_min_indoor=22.0,
                 room.properties.energy.add_default_ideal_air()
         else:  # free running: windows open when it is warm inside and mild outside
             room.properties.energy.hvac = None
-            room.properties.energy.window_vent_control = VentilationControl(
-                min_indoor_temperature=vent_min_indoor,
-                min_outdoor_temperature=vent_min_outdoor,
-                max_outdoor_temperature=vent_max_outdoor)
+            if kind == 'shaft':
+                # a raised skylight's gap is open all year, whatever the temperature
+                room.properties.energy.window_vent_control = VentilationControl(
+                    min_indoor_temperature=-100, min_outdoor_temperature=-100,
+                    max_outdoor_temperature=100)
+            else:
+                room.properties.energy.window_vent_control = VentilationControl(
+                    min_indoor_temperature=vent_min_indoor,
+                    min_outdoor_temperature=vent_min_outdoor,
+                    max_outdoor_temperature=vent_max_outdoor)
             for face in room.faces:
                 for ap in face.apertures:
                     if ap.boundary_condition.name != 'Outdoors':
@@ -207,6 +213,35 @@ def prepare_model(model, hvac='FREE_RUNNING', vent_min_indoor=22.0,
                         dr.properties.energy.vent_opening = VentilationOpening(
                             fraction_area_operable=frac)
     return kinds
+
+
+def _fix_horizontal_openings(idf_str, model):
+    """Give skylight vent openings a stack height and wind effectiveness.
+
+    honeybee writes ZoneVentilation:WindandStackOpenArea with height 0 and
+    effectiveness 0 for a horizontal aperture, which is no flow at all. A raised
+    skylight at the top of a light well is a stack outlet: use half the room
+    height as the height difference and let EnergyPlus compute the wind term.
+    """
+    for room in model.rooms:
+        for face in room.faces:
+            for ap in face.apertures:
+                if (ap.user_data or {}).get('ifc_class') != 'skylight' or \
+                        ap.properties.energy.vent_opening is None:
+                    continue
+                height = max(0.5 * (room.max.z - room.min.z), 0.3)
+                name = '{}_Opening'.format(ap.identifier)
+                start = idf_str.find(name + ',')
+                if start < 0:
+                    continue
+                end = idf_str.find(';', start)
+                block = idf_str[start:end]
+                block = re.sub(r'\n\s*0,\s*!- opening effectiveness',
+                               '\n autocalculate,            !- opening effectiveness', block, count=1)
+                block = re.sub(r'\n\s*0\.0,\s*!- height difference',
+                               '\n {:.2f},                     !- height difference'.format(height), block, count=1)
+                idf_str = idf_str[:start] + block + idf_str[end:]
+    return idf_str
 
 
 def ground_temperature_idf(epw, depth_preference=(0.5, 2.0, 4.0)):
@@ -259,6 +294,7 @@ def write_idf(model, epw_path, folder, outputs=DEFAULT_OUTPUTS, timestep=4,
     location_idf = epw.location.to_idf()
     idf_str = '\n\n'.join((energyplus_idf_version(), sim_par.to_idf(), location_idf,
                            ground_temperature_idf(epw), model_to_idf(model)))
+    idf_str = _fix_horizontal_openings(idf_str, model)
     idf_path = os.path.join(folder, 'in.idf')
     with open(idf_path, 'w', encoding='utf-8') as f:
         f.write(idf_str)

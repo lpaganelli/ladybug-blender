@@ -168,6 +168,12 @@ vira fronteira de ar, e o topo virtual da zona para o exterior vira abertura
 envidraçada. O ArchiCAD exporta o objeto de claraboia como `IfcWindow` sem
 geometria nem limite, por isso o vidro é deduzido do limite virtual.
 
+v0.6.8: claraboia ventilada: zona do tipo claraboia fica com a abertura
+aberta o ano todo (sem controle de temperatura) e, como o honeybee grava
+altura 0 e eficácia de vento 0 para aberturas horizontais (fluxo zero), o
+IDF é corrigido com metade da altura da zona como altura de chaminé e
+eficácia automática. Lavabo em janeiro: 29,9 → 28,7 °C com `Claraboia=0.25`.
+
 Pendências:
 
 - **Tempo**: a conversão leva ~35 s, quase tudo na mesclagem do contexto
