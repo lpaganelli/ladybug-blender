@@ -399,8 +399,10 @@ class IfcToHoneybee(object):
     """
 
     def __init__(self, ifc_path, exclude=EXCLUDE_DEFAULT, include_context=True,
-                 ground_level=0.0, tolerance=TOL, context_reach=10.0, glass_doors=''):
+                 ground_level=0.0, tolerance=TOL, context_reach=10.0, glass_doors='',
+                 local_coords=True):
         self.path = ifc_path
+        self.local_coords = local_coords  # undo the IfcSite rotation, carry it as north
         self.exclude = tuple(e.lower() for e in exclude)
         # door names that are glazed ("PA06, PA09") or explicitly not ("-PA10");
         # unlisted exterior sliding/pivot doors are assumed glazed
@@ -423,9 +425,28 @@ class IfcToHoneybee(object):
         self.warnings = []
         self.report = {}
         self.model = None
+        self.site_rotation, self.site_offset = self._site_placement()
         self.location = self._site_location()
 
     # ---- metadata ----
+    def _site_placement(self):
+        """Rotation (degrees, counterclockwise) and offset of the IfcSite placement.
+
+        ArchiCAD exports the survey-point north as a rotation of the site
+        instead of a TrueNorth; with ``local_coords`` the geometry is put back
+        into the project's own axes and that angle becomes the north.
+        """
+        sites = self.f.by_type('IfcSite')
+        if not sites or sites[0].ObjectPlacement is None:
+            return 0.0, (0.0, 0.0, 0.0)
+        try:
+            m = up.get_local_placement(sites[0].ObjectPlacement)
+        except Exception:  # noqa: BLE001
+            return 0.0, (0.0, 0.0, 0.0)
+        angle = math.degrees(math.atan2(m[1, 0], m[0, 0]))
+        offset = tuple(float(v) * self.scale for v in m[:3, 3])
+        return angle, offset
+
     def _site_location(self):
         sites = self.f.by_type('IfcSite')
         if not sites:
@@ -446,6 +467,9 @@ class IfcToHoneybee(object):
                 x, y = ctx.TrueNorth.DirectionRatios[:2]
                 north = math.degrees(math.atan2(-x, y)) % 360
                 break
+        if self.local_coords and abs(self.site_rotation) > 0.01:
+            # site rotated by r puts north on +Y; in local axes north is at -r
+            north = (north - self.site_rotation) % 360
         return {'latitude': dms(s.RefLatitude), 'longitude': dms(s.RefLongitude),
                 'elevation': (s.RefElevation or 0.0) * self.scale, 'name': s.Name,
                 'north': round(north, 3)}
@@ -706,9 +730,13 @@ class IfcToHoneybee(object):
                     sub.properties.energy.construction = None
                 for sub in f.apertures:
                     sub.properties.energy.construction = None
+            both_walls = fa.type == face_types.wall and best.type == face_types.wall
+            both_virtual = not (fa.user_data or {}).get('physical', False) and \
+                not (best.user_data or {}).get('physical', False)
             if coincident and not fa.has_sub_faces and not best.has_sub_faces and \
-                    fa.type == face_types.wall and best.type == face_types.wall:
-                # two zones touching without a wall between them: open plan
+                    (both_walls or both_virtual):
+                # two zones touching without an element between them: open plan,
+                # or a void in a slab (double height, skylight well over a room)
                 for f in (fa, best):
                     f.type = face_types.air_boundary
                     f.properties.energy.construction = None  # use the air boundary construction
@@ -723,6 +751,17 @@ class IfcToHoneybee(object):
             return rel.RelatingObject.Name
         c = ue.get_container(space)
         return c.Name if c is not None else None
+
+    @staticmethod
+    def _faces_excluded_space(geo, polys, probes=(0.05, 0.2, 0.4)):
+        """True if a point just beyond the face (through the wall) is inside an excluded zone."""
+        for d in probes:
+            pt = geo.center.move(geo.normal * d)
+            for poly in polys:
+                if (poly.min.x <= pt.x <= poly.max.x and poly.min.y <= pt.y <= poly.max.y and
+                        poly.min.z <= pt.z <= poly.max.z and poly.is_point_inside(pt)):
+                    return True
+        return False
 
     def _host_faces(self, faces, g):
         """Wall/roof faces of the room that a window/door boundary lies on.
@@ -963,12 +1002,20 @@ class IfcToHoneybee(object):
     def build(self):
         rooms = []
         bounded_ids = set()
+        excluded_polys = []
         self.timings = {}
         t_rooms = time.time()
         for space in self.f.by_type('IfcSpace'):
             label = '{} {}'.format(space.Name or '', space.LongName or '').lower()
             if any(x in label for x in self.exclude):
                 self.warnings.append('space "{}" excluded by name'.format(label.strip()))
+                # keep its solid: faces of neighbours that look into it are exterior
+                tris = element_faces(self.f, space, self.settings)
+                if tris:
+                    try:
+                        excluded_polys.append(Polyface3D.from_faces(merge_coplanar(tris, self.tol), self.tol))
+                    except Exception:  # noqa: BLE001
+                        pass
                 continue
             for r in (space.BoundedBy or []):
                 if r.RelatedBuildingElement is not None:
@@ -995,13 +1042,20 @@ class IfcToHoneybee(object):
         self.timings['adjacency'] = round(time.time() - t_adj, 1)
         # internal boundaries that found no neighbour become adiabatic; an
         # adiabatic face cannot carry doors/apertures, so those are dropped
-        n_adiabatic, dropped = 0, 0
+        n_adiabatic, dropped, n_to_excluded = 0, 0, 0
         for room in rooms:
             for face in room.faces:
                 ud = face.user_data or {}
                 if not ud.get('matched') and face.boundary_condition.name != 'Surface':
                     ud['unmatched_outdoors'] = True  # no boundary, no neighbour: assume exterior
                 if ud.get('internal') and face.boundary_condition.name != 'Surface':
+                    if self._faces_excluded_space(face.geometry, excluded_polys):
+                        # an open yard, a pool, an open garage: outdoors after all
+                        face.boundary_condition = bcs.outdoors
+                        ud['internal'] = False
+                        ud['faces_excluded_space'] = True
+                        n_to_excluded += 1
+                        continue
                     if face.has_sub_faces:
                         dropped += len(face.apertures) + len(face.doors)
                         face.remove_sub_faces()
@@ -1010,6 +1064,9 @@ class IfcToHoneybee(object):
         if dropped:
             self.warnings.append(
                 '{} interior doors/windows dropped from unmatched internal faces'.format(dropped))
+        if n_to_excluded:
+            self.warnings.append(
+                '{} faces towards excluded spaces set to Outdoors'.format(n_to_excluded))
 
         t_ctx = time.time()
         shades = self._context_shades(bounded_ids, rooms=rooms, reach=self.context_reach) \
@@ -1019,6 +1076,14 @@ class IfcToHoneybee(object):
                       rooms, orphaned_shades=shades, units='Meters',
                       tolerance=self.tol, angle_tolerance=ANGLE_TOL)
         model.display_name = self.f.by_type('IfcProject')[0].Name or 'IFC model'
+        if self.local_coords and (abs(self.site_rotation) > 0.01 or any(abs(v) > self.tol for v in self.site_offset)):
+            # world = R(site) * local + T  ->  local = R(-site) * (world - T)
+            if any(abs(v) > self.tol for v in self.site_offset):
+                model.move(Vector3D(*[-v for v in self.site_offset]))
+            if abs(self.site_rotation) > 0.01:
+                model.rotate_xy(-self.site_rotation, Point3D(0, 0, 0))
+            self.warnings.append('site placement undone: rotation {:.3f} deg -> north {:.3f}'.format(
+                self.site_rotation, self.location['north'] if self.location else 0.0))
         self.model = model
         bc_counts = Counter(f.boundary_condition.name for r in rooms for f in r.faces)
         type_counts = Counter(str(f.type) for r in rooms for f in r.faces)

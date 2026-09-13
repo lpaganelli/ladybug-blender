@@ -38,6 +38,7 @@ SPACE_KINDS = (
     ('bath', ('banh', 'w.c', 'wc', 'lavabo', 'bath', 'toilet')),
     ('garage', ('garagem', 'garage', 'abrigo')),
     ('attic', ('atico', 'ático', 'forro', 'sotao', 'sótão', 'attic', 'plenum', 'entreforro')),
+    ('shaft', ('clarab', 'skylight', 'shaft', 'poço', 'poco', 'lightwell', 'duto', 'prisma')),
     ('service', ('lavanderia', 'varal', 'servi', 'circul', 'hall', 'corredor',
                  'depos', 'despensa', 'laundry', 'storage', 'corridor')),
 )
@@ -77,6 +78,7 @@ def residential_programs():
         'service': _sched('Res Service Occ', _hours(0.0, h9_10=0.5, h15_16=0.5)),
         'garage': _sched('Res Garage Occ', _hours(0.0)),
         'attic': _sched('Res Attic Occ', _hours(0.0)),
+        'shaft': _sched('Res Shaft Occ', _hours(0.0)),
     }
     lights = {
         'bedroom': _sched('Res Bedroom Lights', _hours(0.0, h6_8=0.5, h19_23=1.0)),
@@ -86,6 +88,7 @@ def residential_programs():
         'service': _sched('Res Service Lights', _hours(0.0, h9_10=0.5, h18_20=0.5)),
         'garage': _sched('Res Garage Lights', _hours(0.0, h18_20=0.3)),
         'attic': _sched('Res Attic Lights', _hours(0.0)),
+        'shaft': _sched('Res Shaft Lights', _hours(0.0)),
     }
     equip = {
         'bedroom': _sched('Res Bedroom Equip', _hours(0.2, h20_24=0.6)),
@@ -95,6 +98,7 @@ def residential_programs():
         'service': _sched('Res Service Equip', _hours(0.1, h9_11=1.0)),
         'garage': _sched('Res Garage Equip', _hours(0.0)),
         'attic': _sched('Res Attic Equip', _hours(0.0)),
+        'shaft': _sched('Res Shaft Equip', _hours(0.0)),
     }
     always = _sched('Res Always On', _hours(1.0))
     activity = _sched('Res Activity 110W', _hours(110.0), activity_level)
@@ -111,6 +115,7 @@ def residential_programs():
         'service': (0.03, 4.0, 4.0, 0.0003),
         'garage': (0.0, 2.0, 1.0, 0.0010),
         'attic': (0.0, 0.0, 0.0, 0.0030),  # ventilated roof space: leaky, no loads
+        'shaft': (0.0, 0.0, 0.0, 0.0002),  # skylight well / light shaft: sealed, no loads
     }
     programs = {}
     for kind, (ppl, lgt, eqp, inf) in loads.items():
@@ -171,7 +176,7 @@ def prepare_model(model, hvac='FREE_RUNNING', vent_min_indoor=22.0,
         kinds[room.identifier] = kind
         room.properties.energy.program_type = programs[kind]
         if hvac == 'IDEAL_AIR':
-            if kind not in ('garage', 'service', 'attic'):
+            if kind not in ('garage', 'service', 'attic', 'shaft'):
                 room.properties.energy.add_default_ideal_air()
         else:  # free running: windows open when it is warm inside and mild outside
             room.properties.energy.hvac = None

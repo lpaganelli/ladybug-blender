@@ -231,6 +231,7 @@ class LB_PT_honeybee(LBPanel, bpy.types.Panel):
         col.prop(p, 'hb_glass_doors', placeholder='PA06, PA09, -PA10')
         col.prop(p, 'hb_ground_level')
         col.prop(p, 'hb_context')
+        col.prop(p, 'hb_local_coords')
         col.prop(p, 'hb_draw')
         layout.operator('ladybug.ifc_to_honeybee', icon='HOME')
         row = layout.row(align=True)

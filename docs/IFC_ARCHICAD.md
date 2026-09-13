@@ -54,9 +54,33 @@ gera fragmentos.
   laje troca calor direto com o exterior e o resultado fica frio demais. O
   add-on reconhece o nome "ático", "forro" ou "attic" e trata a zona como
   não ocupada e muito ventilada.
-- A piscina é ignorada pelo nome (campo *Exclude* do painel).
+- Áreas **descobertas ou abertas** que existem como zona no ArchiCAD (piscina,
+  varal, garagem aberta) devem ir no campo *Exclude* do painel. Uma zona
+  excluída não vira ambiente, e as faces dos vizinhos voltadas para ela
+  passam a ser exteriores, com as janelas e portas que dão para ela. Uma
+  porta de correr para o varal continua opaca a menos que esteja em *Glass
+  Doors* (a regra automática só olha portas marcadas externas no IFC).
 - Onde uma laje serve a vários ambientes (um ático sobre três quartos) o
   add-on divide a face por ambiente antes de emparelhar.
+
+## Claraboias e poços de luz
+
+Uma claraboia sobre um ambiente, atravessando o ático, precisa existir como
+volume no IFC. Duas formas:
+
+1. **Zona alta**: estenda a zona do ambiente (o Lavabo) até o telhado, faça
+   um furo no polígono da zona do ático nesse trecho e coloque a claraboia
+   como janela de telhado. As paredes do poço devem ser paredes, para
+   separarem o poço do ático.
+2. **Zona própria**: uma zona "Claraboia Lavabo" do forro do ambiente ao
+   telhado, sem laje entre ela e o ambiente (limite virtual). O add-on
+   reconhece o nome (claraboia, poço, shaft, skylight) como zona sem cargas
+   nem ventilação, e o forro virtual coincidente entre as duas vira
+   fronteira de ar: as duas zonas se comportam como um volume só, com a
+   janela em cima.
+
+Sem isso, a abertura no forro não tem informação de vidro nem de volume, e o
+ambiente fica com um forro fechado para o ático.
 
 ## Portas e janelas
 
@@ -101,11 +125,13 @@ as duas (o IFC também traz o norte; o fuso horário fica o do EPW).
 Posição do modelo no translator (*Definir a posição do modelo IFC por*).
 O ArchiCAD 29 **não grava o `TrueNorth`** (fica sempre +Y). O norte só sai
 como rotação do `IfcSite` quando se exporta com *Ponto de Origem e Origem do
-Projeto*: a geometria chega girada com o norte em +Y e o campo *North* = 0
-está correto. Com *Origem do Projeto apenas* a geometria sai como está no
-ArchiCAD (mesma orientação do FBX e do DWG), mas nada carrega o norte:
-digite-o no painel (o valor da *Localização do Projeto*, graus anti-horários
-a partir de +Y). Coordenadas saem certas nos dois casos.
+Projeto*. Com a opção *Undo Site Rotation* do painel (ligada por padrão) o
+add-on desfaz essa rotação, deixa a geometria nos eixos do projeto (mesma
+orientação do FBX e do DWG) e passa o ângulo para o campo *North*. Com a
+opção desligada a geometria fica girada com o norte em +Y e *North* = 0.
+Com *Origem do Projeto apenas* nada carrega o norte: digite-o no painel
+(o valor da *Localização do Projeto*, graus anti-horários a partir de +Y).
+Coordenadas saem certas nos dois casos.
 
 ## Nomes das janelas e portas
 

@@ -60,7 +60,8 @@ class LB_OT_ifc_to_honeybee(bpy.types.Operator):
         exclude = [s.strip().lower() for s in p.hb_exclude.split(',') if s.strip()]
         try:
             bridge = IfcToHoneybee(path, exclude=exclude, include_context=p.hb_context,
-                                   ground_level=p.hb_ground_level, glass_doors=p.hb_glass_doors)
+                                   ground_level=p.hb_ground_level, glass_doors=p.hb_glass_doors,
+                                   local_coords=p.hb_local_coords)
             model = bridge.build()
         except Exception as exc:  # noqa: BLE001
             self.report({'ERROR'}, 'IFC bridge failed: {}'.format(exc))
@@ -142,7 +143,7 @@ class LB_OT_location_from_ifc(bpy.types.Operator):
             return {'CANCELLED'}
         from ..core.ifc_bridge import IfcToHoneybee
         try:
-            loc = IfcToHoneybee(path, include_context=False)._site_location()
+            loc = IfcToHoneybee(path, include_context=False, local_coords=p.hb_local_coords).location
         except Exception as exc:  # noqa: BLE001
             self.report({'ERROR'}, 'Cannot read the IFC site: {}'.format(exc))
             return {'CANCELLED'}

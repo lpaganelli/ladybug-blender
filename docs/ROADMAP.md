@@ -150,6 +150,17 @@ longitude, elevação e norte do `IfcSite`/`TrueNorth`, fuso do EPW) e *List
 Openings* no painel Honeybee, que imprime os nomes das janelas e portas do
 modelo para preencher *Windows* e *Glass Doors*.
 
+v0.6.6: zonas excluídas (piscina, varal, garagem aberta) deixam de virar
+faces adiabáticas nos vizinhos: uma sonda atrás de cada face interna sem
+par testa se cai no sólido de uma zona excluída e, se cai, a face vira
+Outdoors e mantém suas janelas e portas. *Undo Site Rotation*: a rotação
+que o ArchiCAD grava no `IfcSite` (norte do levantamento) é desfeita na
+geometria e vira o *North* do painel. Tipo de zona "claraboia/poço" (sem
+cargas, sem ventilação) e piso/forro virtual coincidente entre duas zonas
+como fronteira de ar, para poços de luz e pés-direitos duplos divididos em
+zonas. Ano completo da casa (13 zonas, varal e garagem excluídos, portas de
+vidro): 387 s.
+
 Pendências:
 
 - **Tempo**: a conversão leva ~35 s, quase tudo na mesclagem do contexto
