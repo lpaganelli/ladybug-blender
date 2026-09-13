@@ -425,6 +425,7 @@ class IfcToHoneybee(object):
         self.warnings = []
         self.report = {}
         self.model = None
+        self._room_bnds = {}  # room identifier -> [(Face3D, physical, external)]
         self.site_rotation, self.site_offset = self._site_placement()
         self.location = self._site_location()
 
@@ -536,6 +537,7 @@ class IfcToHoneybee(object):
         if not poly.is_solid:
             counts['not_solid'] += 1
         room = Room.from_polyface3d(_ident(name, 'Room_'), poly, ground_depth=self.ground_level)
+        self._room_bnds[room.identifier] = []
         try:
             room.remove_colinear_vertices_envelope(self.tol)
         except Exception:  # noqa: BLE001
@@ -556,6 +558,9 @@ class IfcToHoneybee(object):
                 counts['openings_ignored'] += 1
             else:
                 bnds.append((rel, el, g))
+                self._room_bnds[room.identifier].append(
+                    (g, rel.PhysicalOrVirtualBoundary == 'PHYSICAL',
+                     rel.InternalOrExternalBoundary == 'EXTERNAL'))
 
         for i, face in enumerate(room.faces):
             fg = face.geometry
@@ -599,6 +604,20 @@ class IfcToHoneybee(object):
                     face.boundary_condition = bcs.ground
                 else:
                     face.boundary_condition = bcs.outdoors
+                if not physical and el is None and face.type == face_types.roof_ceiling                         and fg.normal.z > 0.5:
+                    # open to the sky with no element: a skylight (light well top)
+                    try:
+                        c = fg.center
+                        glass = Face3D([p.move((c - p) * 0.04) for p in fg.boundary], fg.plane)
+                        ap = Aperture(_ident('{}_skylight'.format(face.identifier)), glass)
+                        ap.properties.energy.construction = self.lib.window_construction(space)
+                        ap.display_name = 'Claraboia'
+                        ap.user_data = {'ifc_class': 'skylight'}
+                        face.add_aperture(ap)
+                        counts['skylights'] += 1
+                        self.warnings.append('{}: open top without element treated as skylight'.format(name))
+                    except Exception:  # noqa: BLE001
+                        pass
             counts[str(face.type)] += 1
 
         # ---- windows / doors ----
@@ -681,6 +700,7 @@ class IfcToHoneybee(object):
         # an attic zone EXTERNAL), what counts is a facing room face nearby
         candidates = [(r, f) for r in rooms for f in r.faces
                       if f.boundary_condition.name not in ('Surface', 'Ground')]
+        owner = {id(f): r for r, f in candidates}
         for i, (ra, fa) in enumerate(candidates):
             if fa.boundary_condition.name == 'Surface':
                 continue
@@ -731,8 +751,8 @@ class IfcToHoneybee(object):
                 for sub in f.apertures:
                     sub.properties.energy.construction = None
             both_walls = fa.type == face_types.wall and best.type == face_types.wall
-            both_virtual = not (fa.user_data or {}).get('physical', False) and \
-                not (best.user_data or {}).get('physical', False)
+            both_virtual = self._is_virtual_at(ra, fa.geometry) and \
+                self._is_virtual_at(owner.get(id(best)), best.geometry)
             if coincident and not fa.has_sub_faces and not best.has_sub_faces and \
                     (both_walls or both_virtual):
                 # two zones touching without an element between them: open plan,
@@ -751,6 +771,42 @@ class IfcToHoneybee(object):
             return rel.RelatingObject.Name
         c = ue.get_container(space)
         return c.Name if c is not None else None
+
+    def _voids_to_air(self, rooms):
+        """Surface pairs with no element on either side (a void in a slab between
+        a room and its light well, a zone limit in open plan) become air boundaries."""
+        faces = {f.identifier: (r, f) for r in rooms for f in r.faces}
+        n = 0
+        for room in rooms:
+            for face in room.faces:
+                if face.boundary_condition.name != 'Surface' or face.type == face_types.air_boundary:
+                    continue
+                other = faces.get(face.boundary_condition.boundary_condition_object)
+                if other is None or face.has_sub_faces or other[1].has_sub_faces:
+                    continue
+                if self._is_virtual_at(room, face.geometry) and self._is_virtual_at(other[0], other[1].geometry):
+                    for f in (face, other[1]):
+                        f.type = face_types.air_boundary
+                        f.properties.energy.construction = None
+                    n += 1
+        return n
+
+    def _is_virtual_at(self, room, geo):
+        """True when the room's boundaries at the face center are virtual only
+        (a void in a slab, an open zone limit), i.e. no element sits there."""
+        if room is None:
+            return False
+        pt = geo.center
+        virtual, physical = False, False
+        for g, is_physical, _ext in self._room_bnds.get(room.identifier, []):
+            if abs(abs(g.normal.dot(geo.normal)) - 1) > 0.05 or abs(g.plane.distance_to_point(pt)) > 0.05:
+                continue
+            if g.is_point_on_face(g.plane.closest_point(pt), self.tol * 5):
+                if is_physical:
+                    physical = True
+                else:
+                    virtual = True
+        return virtual and not physical
 
     @staticmethod
     def _faces_excluded_space(geo, polys, probes=(0.05, 0.2, 0.4)):
@@ -1038,6 +1094,7 @@ class IfcToHoneybee(object):
         adj = Room.solve_adjacency(rooms, self.tol)
         n_adj = len(adj.get('adjacent_faces', []))
         n_adj += self._pair_internal_faces(rooms)
+        self.report['air_boundaries'] = self.report.get('air_boundaries', 0) + self._voids_to_air(rooms)
         self._unify_adjacent_constructions(rooms)
         self.timings['adjacency'] = round(time.time() - t_adj, 1)
         # internal boundaries that found no neighbour become adiabatic; an

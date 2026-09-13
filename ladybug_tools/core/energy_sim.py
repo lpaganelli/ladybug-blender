@@ -150,6 +150,8 @@ def parse_window_openings(text):
 def operable_fraction_for(aperture, openings, default=0.5):
     """Operable fraction of an aperture from its (IFC) name and a name -> fraction map."""
     name = (aperture.display_name or aperture.identifier or '').upper()
+    if (aperture.user_data or {}).get('ifc_class') == 'skylight':
+        default = 0.0  # skylights are fixed unless listed by name ("Claraboia=0.3")
     best, best_len = None, -1
     for key, frac in openings.items():
         if key and key in name and len(key) > best_len:

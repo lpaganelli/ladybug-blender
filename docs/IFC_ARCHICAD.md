@@ -72,12 +72,14 @@ volume no IFC. Duas formas:
    um furo no polígono da zona do ático nesse trecho e coloque a claraboia
    como janela de telhado. As paredes do poço devem ser paredes, para
    separarem o poço do ático.
-2. **Zona própria**: uma zona "Claraboia Lavabo" do forro do ambiente ao
-   telhado, sem laje entre ela e o ambiente (limite virtual). O add-on
-   reconhece o nome (claraboia, poço, shaft, skylight) como zona sem cargas
-   nem ventilação, e o forro virtual coincidente entre as duas vira
-   fronteira de ar: as duas zonas se comportam como um volume só, com a
-   janela em cima.
+2. **Zona própria**: uma zona "Claraboia" do forro do ambiente ao telhado,
+   sobre a abertura na laje. O add-on reconhece o nome (claraboia, poço,
+   shaft, skylight) como zona sem cargas nem ventilação; a parte do forro
+   onde não há laje (a abertura) vira fronteira de ar entre as duas zonas,
+   e o topo da zona, se não houver elemento nenhum ali (limite virtual para
+   o exterior), vira uma abertura envidraçada, a claraboia. O resto do forro
+   continua como laje para o ático. Testado: Lavabo + zona Claraboia de
+   0,73 m² sobre a abertura.
 
 Sem isso, a abertura no forro não tem informação de vidro nem de volume, e o
 ambiente fica com um forro fechado para o ático.

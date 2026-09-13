@@ -161,6 +161,13 @@ como fronteira de ar, para poços de luz e pés-direitos duplos divididos em
 zonas. Ano completo da casa (13 zonas, varal e garagem excluídos, portas de
 vidro): 387 s.
 
+v0.6.7: poço de luz de verdade: a abertura na laje entre o ambiente e a
+zona "Claraboia" (limite virtual dos dois lados, detectado pelas fronteiras
+do IFC no centro da face, já que a face é dividida pelo `intersect_adjacency`)
+vira fronteira de ar, e o topo virtual da zona para o exterior vira abertura
+envidraçada. O ArchiCAD exporta o objeto de claraboia como `IfcWindow` sem
+geometria nem limite, por isso o vidro é deduzido do limite virtual.
+
 Pendências:
 
 - **Tempo**: a conversão leva ~35 s, quase tudo na mesclagem do contexto
