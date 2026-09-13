@@ -98,12 +98,14 @@ Com um EPW carregado, a localização do painel é a do arquivo de clima. Os
 botões *From EPW* / *From IFC* do painel *Weather & Location* trocam entre
 as duas (o IFC também traz o norte; o fuso horário fica o do EPW).
 
-Posição do modelo no translator (*Definir a posição do modelo IFC por*):
-com *Ponto de Origem e Origem do Projeto* o ArchiCAD gira a geometria para o
-norte do levantamento e o IFC sai com `TrueNorth` = +Y (norte 0 no painel);
-com *Origem do Projeto apenas* a geometria sai como está no ArchiCAD e o
-norte vai no `TrueNorth`. As duas funcionam; a segunda mantém o modelo na
-mesma orientação dos outros exports (FBX, DWG).
+Posição do modelo no translator (*Definir a posição do modelo IFC por*).
+O ArchiCAD 29 **não grava o `TrueNorth`** (fica sempre +Y). O norte só sai
+como rotação do `IfcSite` quando se exporta com *Ponto de Origem e Origem do
+Projeto*: a geometria chega girada com o norte em +Y e o campo *North* = 0
+está correto. Com *Origem do Projeto apenas* a geometria sai como está no
+ArchiCAD (mesma orientação do FBX e do DWG), mas nada carrega o norte:
+digite-o no painel (o valor da *Localização do Projeto*, graus anti-horários
+a partir de +Y). Coordenadas saem certas nos dois casos.
 
 ## Nomes das janelas e portas
 
