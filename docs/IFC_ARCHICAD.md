@@ -94,6 +94,24 @@ painel: graus anti-horários a partir de +Y, convenção do Ladybug.
 Coordenadas de mapa (`IfcMapConversion`, ponto de levantamento) não são
 necessárias para a análise.
 
+Com um EPW carregado, a localização do painel é a do arquivo de clima. Os
+botões *From EPW* / *From IFC* do painel *Weather & Location* trocam entre
+as duas (o IFC também traz o norte; o fuso horário fica o do EPW).
+
+Posição do modelo no translator (*Definir a posição do modelo IFC por*):
+com *Ponto de Origem e Origem do Projeto* o ArchiCAD gira a geometria para o
+norte do levantamento e o IFC sai com `TrueNorth` = +Y (norte 0 no painel);
+com *Origem do Projeto apenas* a geometria sai como está no ArchiCAD e o
+norte vai no `TrueNorth`. As duas funcionam; a segunda mantém o modelo na
+mesma orientação dos outros exports (FBX, DWG).
+
+## Nomes das janelas e portas
+
+Os campos *Windows* e *Glass Doors* usam os nomes dos elementos no ArchiCAD
+(ID: `JA01`, `PA09`), que saem sempre no IFC. Não é preciso exportar
+*Parâmetros Porta-Janela*. O botão *List Openings* imprime no Info os nomes
+encontrados no modelo, com tipo, área e ambientes.
+
 ## Conferindo o arquivo
 
 Depois de converter, o painel mostra `N rooms, N faces, N apertures, ...` e

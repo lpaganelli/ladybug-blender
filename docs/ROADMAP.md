@@ -145,6 +145,11 @@ e que tornam o cálculo de sombra muito mais lento (3 dias: 466 s com furos, 81 
 sem). A porta de vidro da cozinha muda o resultado: média de janeiro de
 27,3 °C para 25,4 °C.
 
+v0.6.5: botões *From EPW* / *From IFC* no painel de clima (latitude,
+longitude, elevação e norte do `IfcSite`/`TrueNorth`, fuso do EPW) e *List
+Openings* no painel Honeybee, que imprime os nomes das janelas e portas do
+modelo para preencher *Windows* e *Glass Doors*.
+
 Pendências:
 
 - **Tempo**: a conversão leva ~35 s, quase tudo na mesclagem do contexto

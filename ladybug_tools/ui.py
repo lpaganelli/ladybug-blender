@@ -31,6 +31,10 @@ class LB_PT_weather(LBPanel, bpy.types.Panel):
         col.prop(p, 'time_zone')
         col.prop(p, 'elevation')
         layout.prop(p, 'north')
+        row = layout.row(align=True)
+        row.label(text='Location:')
+        row.operator('ladybug.location_from_epw', icon='WORLD')
+        row.operator('ladybug.location_from_ifc', icon='HOME')
 
 
 class LB_PT_period(LBPanel, bpy.types.Panel):
@@ -232,7 +236,9 @@ class LB_PT_honeybee(LBPanel, bpy.types.Panel):
         row = layout.row(align=True)
         row.prop(p, 'hb_color_by', text='')
         row.operator('ladybug.hb_redraw', text='', icon='FILE_REFRESH')
-        layout.operator('ladybug.hbjson_export', icon='EXPORT')
+        row = layout.row(align=True)
+        row.operator('ladybug.hbjson_export', icon='EXPORT')
+        row.operator('ladybug.hb_openings', icon='PRESET')
 
         box = layout.box()
         box.label(text='EnergyPlus', icon='LIGHT_DATA')

@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "ladybug_tools"
-version = "0.6.4"
+version = "0.6.5"
 name = "Ladybug Tools"
 tagline = "Sun path, solar radiation and climate analysis inside Blender"
 maintainer = "Leandro <leandro@janela.tec.br>"

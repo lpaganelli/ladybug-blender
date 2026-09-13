@@ -44,6 +44,25 @@ class LB_OT_reload_epw(bpy.types.Operator):
         return {'CANCELLED'}
 
 
+class LB_OT_location_from_epw(bpy.types.Operator):
+    """Set the location back to the EPW header"""
+    bl_idname = 'ladybug.location_from_epw'
+    bl_label = 'From EPW'
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        p = common.props(context)
+        if not p.epw_path:
+            self.report({'ERROR'}, 'No EPW loaded')
+            return {'CANCELLED'}
+        p.epw_path = p.epw_path  # re-runs the header read
+        if not p.epw_loaded:
+            self.report({'ERROR'}, 'Could not read EPW file')
+            return {'CANCELLED'}
+        self.report({'INFO'}, 'Location from EPW: {} ({:.2f}, {:.2f})'.format(p.city, p.latitude, p.longitude))
+        return {'FINISHED'}
+
+
 class LB_OT_epw_summary(bpy.types.Operator):
     """Print a summary of the EPW data to the Info editor and console"""
     bl_idname = 'ladybug.epw_summary'
@@ -140,7 +159,8 @@ class LB_OT_period_preset(bpy.types.Operator):
         return {'FINISHED'}
 
 
-CLASSES = (LB_OT_load_epw, LB_OT_reload_epw, LB_OT_epw_summary, LB_OT_period_preset)
+CLASSES = (LB_OT_load_epw, LB_OT_reload_epw, LB_OT_location_from_epw, LB_OT_epw_summary,
+           LB_OT_period_preset)
 
 
 def register():

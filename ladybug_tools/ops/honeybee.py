@@ -125,7 +125,75 @@ class LB_OT_hb_redraw(bpy.types.Operator):
         return {'FINISHED'}
 
 
-CLASSES = (LB_OT_ifc_pick, LB_OT_ifc_to_honeybee, LB_OT_hbjson_export, LB_OT_hb_redraw)
+class LB_OT_location_from_ifc(bpy.types.Operator):
+    """Take latitude, longitude, elevation and north from the IFC site (IfcSite, TrueNorth)"""
+    bl_idname = 'ladybug.location_from_ifc'
+    bl_label = 'From IFC'
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        p = common.props(context)
+        if not ifcopenshell_available():
+            self.report({'ERROR'}, 'ifcopenshell not found: install Bonsai in this Blender')
+            return {'CANCELLED'}
+        path = bpy.path.abspath(p.hb_ifc_path) or bonsai_ifc_path() or _LAST_MODEL['path']
+        if not path or not os.path.isfile(path):
+            self.report({'ERROR'}, 'Pick an IFC file (or load one in Bonsai)')
+            return {'CANCELLED'}
+        from ..core.ifc_bridge import IfcToHoneybee
+        try:
+            loc = IfcToHoneybee(path, include_context=False)._site_location()
+        except Exception as exc:  # noqa: BLE001
+            self.report({'ERROR'}, 'Cannot read the IFC site: {}'.format(exc))
+            return {'CANCELLED'}
+        if not loc or loc.get('latitude') is None:
+            self.report({'ERROR'}, 'The IFC site has no latitude/longitude')
+            return {'CANCELLED'}
+        p.latitude, p.longitude = loc['latitude'], loc['longitude']
+        p.elevation = loc.get('elevation') or 0.0
+        p.north = loc.get('north') or 0.0
+        if loc.get('name'):
+            p.city = loc['name']
+        self.report({'INFO'}, 'IFC site: {:.4f}, {:.4f}, north {:.2f} (time zone kept: {:+g})'.format(
+            p.latitude, p.longitude, p.north, p.time_zone))
+        return {'FINISHED'}
+
+
+class LB_OT_hb_openings(bpy.types.Operator):
+    """List the windows and doors of the Honeybee model by name (for the Windows and Glass Doors fields)"""
+    bl_idname = 'ladybug.hb_openings'
+    bl_label = 'List Openings'
+
+    def execute(self, context):
+        model = _LAST_MODEL['model']
+        if model is None:
+            self.report({'ERROR'}, 'Run IFC to Honeybee first')
+            return {'CANCELLED'}
+        rows = {}
+        for room in model.rooms:
+            for face in room.faces:
+                for sub in face.apertures:
+                    r = rows.setdefault(sub.display_name, {'kind': 'window', 'area': 0.0, 'rooms': set()})
+                    r['area'] += sub.area
+                    r['rooms'].add(room.display_name)
+                for sub in face.doors:
+                    kind = 'glass door' if sub.is_glass else 'door'
+                    r = rows.setdefault(sub.display_name, {'kind': kind, 'area': 0.0, 'rooms': set()})
+                    r['area'] += sub.area
+                    r['rooms'].add(room.display_name)
+        if not rows:
+            self.report({'WARNING'}, 'No windows or doors in the model')
+            return {'CANCELLED'}
+        for name in sorted(rows):
+            r = rows[name]
+            line = '{:<8s} {:<10s} {:5.1f} m2  {}'.format(name, r['kind'], r['area'], ', '.join(sorted(r['rooms'])))
+            print('[Ladybug]', line)
+            self.report({'INFO'}, line)
+        return {'FINISHED'}
+
+
+CLASSES = (LB_OT_ifc_pick, LB_OT_ifc_to_honeybee, LB_OT_hbjson_export, LB_OT_hb_redraw,
+           LB_OT_location_from_ifc, LB_OT_hb_openings)
 
 
 def register():
