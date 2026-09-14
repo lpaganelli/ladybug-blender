@@ -197,6 +197,12 @@ reduzidos a dois (o `add_from_ddy_996_004` do honeybee traz 31, e cada um é
 um dia inteiro de simulação: Ideal Air de 3 dias caía de 77 s para 12 min).
 Faces de parede divididas pela projeção dos vizinhos: 35 → 49 pares.
 
+v0.6.12: *List Constructions* (camadas, λ, U com películas, área, origem);
+espessura medida na geometria para elementos de material único (a telha
+limitada a 20 mm); pisos e forros com limite virtual recebem a laje logo
+atrás da face (229 m² de piso saíram do "Generic Ground Slab" para o
+concreto do IFC).
+
 Pendências:
 
 - **Tempo**: a conversão leva ~35 s, quase tudo na mesclagem do contexto

@@ -116,6 +116,36 @@ ambiente fica com um forro fechado para o ático.
   avisa quando o limite é bem menor que a porta ("boundary of IfcDoor PA06
   is 1.9 m2 for a 3.8 m2 element").
 
+## Materiais e construções
+
+As construções vêm dos **Materiais de Construção** do ArchiCAD: cada camada
+do composto vira uma camada do EnergyPlus com a condutividade, a densidade
+e o calor específico das *propriedades físicas* do material (é isso que sai
+no `Pset_MaterialThermal`). Confira esses valores no ArchiCAD em *Opções >
+Atributos > Materiais de Construção*, aba de propriedades físicas: os
+padrões da biblioteca nem sempre são realistas (tijolo cerâmico com
+λ = 0,12 W/mK é o de um bloco muito isolante; alvenaria comum fica entre
+0,7 e 0,9 para o conjunto). O botão *List Constructions* do painel Honeybee
+imprime o que está em uso: camadas, espessuras, λ, U com películas de ar,
+área e quantas faces, e marca as que ficaram no padrão genérico do
+Honeybee por falta de material no IFC.
+
+Regras do add-on:
+
+- Elemento com composto de camadas: usa as camadas.
+- Elemento com um só material (telhado ou laje cujo composto saiu como um
+  material): espessura medida na geometria; material de telha limitado a
+  20 mm. Para o telhado sair com as camadas certas, use um composto no
+  ArchiCAD e confira o `IfcMaterialLayerSet` no IFC.
+- Piso ou forro de zona cujo limite é virtual (a zona termina na face da
+  laje): usa a laje encontrada logo atrás da face.
+- Sem material: padrão genérico do Honeybee (portas internas, muro externo
+  sem composto, telhado sem material). Aparecem como `[Honeybee default]`.
+- Materiais sem propriedades térmicas no IFC entram com λ = 0,5 W/mK,
+  ρ = 1000 kg/m³ e c = 1000 J/kgK e geram um aviso no console.
+- Vidros: U do `ThermalTransmittance` da janela, senão vidro simples
+  (U = 5,7, SHGC 0,8).
+
 ## Editar o modelo à mão
 
 O `HB Context` pode ser editado na cena. Os rooms e as aberturas não:

@@ -240,7 +240,9 @@ class LB_PT_honeybee(LBPanel, bpy.types.Panel):
         row = layout.row(align=True)
         row.operator('ladybug.hbjson_export', icon='EXPORT')
         row.operator('ladybug.hbjson_import', icon='IMPORT')
-        layout.operator('ladybug.hb_openings', icon='PRESET')
+        row = layout.row(align=True)
+        row.operator('ladybug.hb_openings', icon='PRESET')
+        row.operator('ladybug.hb_constructions', icon='MATERIAL')
 
         box = layout.box()
         box.label(text='EnergyPlus', icon='LIGHT_DATA')

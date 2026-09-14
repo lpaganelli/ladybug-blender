@@ -321,11 +321,23 @@ class ConstructionLibrary(object):
             self.materials[key] = mat
         return self.materials[key]
 
-    def construction_for(self, element, default_thickness=0.1):
-        """OpaqueConstruction from the element's material (layer set or single)."""
+    def construction_for(self, element, default_thickness=0.1, thickness=None):
+        """OpaqueConstruction from the element's material (layer set or single).
+
+        ``thickness`` (m) is used for elements with a single material and no
+        layers (a roof or slab whose composite did not export as layers):
+        measured from the geometry by the caller.
+        """
         mat = ue.get_material(element)
         if mat is None:
             return None
+        if thickness:
+            default_thickness = float(thickness)
+        mname = (getattr(mat, 'Name', '') or '').lower()
+        if any(w in mname for w in ('telha', 'tile', 'shingle', 'chapa', 'metal')):
+            # a roof exported as one "tile" material: the geometry is the whole
+            # roof build-up, the tile itself is thin
+            default_thickness = min(default_thickness, 0.02)
         if mat.is_a('IfcMaterialLayerSetUsage'):
             mat = mat.ForLayerSet
         if mat.is_a('IfcMaterialProfileSetUsage'):
@@ -444,11 +456,51 @@ class IfcToHoneybee(object):
         self.report = {}
         self.model = None
         self._room_bnds = {}  # room identifier -> [(Face3D, physical, external)]
+        self._tris_cache, self._bbox_cache = {}, {}
         self._small_openings = set()
         self.site_rotation, self.site_offset = self._site_placement()
         self.location = self._site_location()
 
     # ---- metadata ----
+    def _element_tris(self, element):
+        """Triangulated faces of an element (meters), cached per element."""
+        key = element.id()
+        if key not in self._tris_cache:
+            self._tris_cache[key] = element_faces(self.f, element, self.settings)
+        return self._tris_cache[key]
+
+    def _element_thickness(self, element, normal):
+        """Extent of the element along ``normal`` (m): the thickness of a slab,
+        roof or wall as built, whatever its material representation says."""
+        tris = self._element_tris(element)
+        if not tris:
+            return None
+        ds = [p.x * normal.x + p.y * normal.y + p.z * normal.z for t in tris for p in t.boundary]
+        thick = max(ds) - min(ds)
+        return thick if 0.005 <= thick <= 1.0 else None
+
+    def _element_behind(self, geo, classes, probes=(0.05, 0.15, 0.3)):
+        """The slab/roof whose bounding box contains a point just behind the face."""
+        for cls in classes:
+            for el in self.f.by_type(cls):
+                tris = self._element_tris(el)
+                if not tris:
+                    continue
+                bb = self._bbox_cache.get(el.id())
+                if bb is None:
+                    xs = [p.x for t in tris for p in t.boundary]
+                    ys = [p.y for t in tris for p in t.boundary]
+                    zs = [p.z for t in tris for p in t.boundary]
+                    bb = (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
+                    self._bbox_cache[el.id()] = bb
+                for d in probes:
+                    pt = geo.center.move(geo.normal * d)
+                    if (bb[0] - self.tol <= pt.x <= bb[3] + self.tol and
+                            bb[1] - self.tol <= pt.y <= bb[4] + self.tol and
+                            bb[2] - self.tol <= pt.z <= bb[5] + self.tol):
+                        return el
+        return None
+
     def _site_placement(self):
         """Rotation (degrees, counterclockwise) and offset of the IfcSite placement.
 
@@ -614,7 +666,7 @@ class IfcToHoneybee(object):
                 face.display_name = '{} · {}'.format(name, el.Name)
                 if el.is_a('IfcRoof') and fg.normal.z > 0.2:  # sloped roof, not a gable wall
                     face.type = face_types.roof_ceiling
-                con = self.lib.construction_for(el)
+                con = self.lib.construction_for(el, thickness=self._element_thickness(el, fg.normal))
                 if con is not None:
                     face.properties.energy.construction = con
             else:
@@ -656,6 +708,19 @@ class IfcToHoneybee(object):
                 self.warnings.append('{}: open top without element treated as skylight'.format(name))
             except Exception:  # noqa: BLE001
                 pass
+
+        # floors and ceilings whose boundary was virtual (zone limits on the slab
+        # face) get the construction of the slab found right behind the face
+        for face in room.faces:
+            if face.type == face_types.wall or face.properties.energy.is_construction_set_on_object:
+                continue
+            fg = face.geometry
+            el = self._element_behind(fg, ('IfcSlab', 'IfcRoof'))
+            if el is not None:
+                con = self.lib.construction_for(el, thickness=self._element_thickness(el, fg.normal))
+                if con is not None:
+                    face.properties.energy.construction = con
+                    counts['constructions_from_probe'] += 1
 
         # ---- windows / doors ----
         for rel, el, g in subs:

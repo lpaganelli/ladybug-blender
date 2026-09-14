@@ -218,8 +218,60 @@ class LB_OT_hb_openings(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class LB_OT_hb_constructions(bpy.types.Operator):
+    """List the constructions in use (layers, U-value, area) and which faces still use Honeybee defaults"""
+    bl_idname = 'ladybug.hb_constructions'
+    bl_label = 'List Constructions'
+
+    def execute(self, context):
+        model = _LAST_MODEL['model']
+        if model is None:
+            self.report({'ERROR'}, 'Run IFC to Honeybee first')
+            return {'CANCELLED'}
+        rows = {}
+
+        def add(obj, kind):
+            con = obj.properties.energy.construction
+            r = rows.setdefault(con.identifier, {'con': con, 'kind': kind, 'n': 0, 'area': 0.0,
+                                                 'default': not obj.properties.energy.is_construction_set_on_object})
+            r['n'] += 1
+            r['area'] += obj.area
+            r['default'] = r['default'] and not obj.properties.energy.is_construction_set_on_object
+
+        for room in model.rooms:
+            for face in room.faces:
+                add(face, '{}/{}'.format(face.type, face.boundary_condition.name))
+                for ap in face.apertures:
+                    add(ap, 'Aperture')
+                for dr in face.doors:
+                    add(dr, 'GlassDoor' if dr.is_glass else 'Door')
+        lines = []
+        for ident, r in sorted(rows.items(), key=lambda kv: -kv[1]['area']):
+            con = r['con']
+            src = 'Honeybee default' if r['default'] or not ident.startswith('IFC_') else 'IFC'
+            try:
+                if hasattr(con, 'materials') and con.materials and hasattr(con.materials[0], 'thickness'):
+                    layers = ', '.join('{} {:.0f}mm k={:.2f}'.format(
+                        (m.display_name or m.identifier).split(' ')[0][:14], m.thickness * 1000, m.conductivity)
+                        for m in con.materials)
+                    uval = 'U={:.2f}'.format(con.u_factor)
+                else:
+                    layers = ', '.join((m.display_name or m.identifier)[:20] for m in con.materials)
+                    uval = 'U={:.2f} SHGC={:.2f}'.format(con.u_factor, con.shgc)
+            except Exception:  # noqa: BLE001
+                layers, uval = '', ''
+            lines.append('{:<34s} {:<16s} {:3d} faces {:7.1f} m2  {}  [{}]  {}'.format(
+                (con.display_name or ident)[:34], r['kind'][:16], r['n'], r['area'], uval, src, layers))
+        for line in lines:
+            print('[Ladybug]', line)
+            self.report({'INFO'}, line)
+        n_def = sum(1 for r in rows.values() if r['default'])
+        self.report({'INFO'}, '{} constructions in use, {} are Honeybee defaults (no IFC material on those faces)'.format(len(rows), n_def))
+        return {'FINISHED'}
+
+
 CLASSES = (LB_OT_ifc_pick, LB_OT_ifc_to_honeybee, LB_OT_hbjson_export, LB_OT_hbjson_import,
-           LB_OT_hb_redraw, LB_OT_location_from_ifc, LB_OT_hb_openings)
+           LB_OT_hb_redraw, LB_OT_location_from_ifc, LB_OT_hb_openings, LB_OT_hb_constructions)
 
 
 def register():
