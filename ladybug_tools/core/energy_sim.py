@@ -271,15 +271,42 @@ DEFAULT_OUTPUTS = (
 )
 
 
+def _design_days(sim_par, epw_path, folder):
+    """Sizing design days for ideal air: the .ddy next to the EPW, else from the EPW."""
+    ddy = os.path.splitext(epw_path)[0] + '.ddy'
+    if os.path.isfile(ddy):
+        try:
+            sim_par.sizing_parameter.add_from_ddy_996_004(ddy)
+            return 'ddy'
+        except Exception:  # noqa: BLE001 (keywords not found in this ddy)
+            try:
+                sim_par.sizing_parameter.add_from_ddy(ddy)
+                return 'ddy (all)'
+            except Exception:  # noqa: BLE001
+                pass
+    tmp = os.path.join(folder, 'from_epw.ddy')
+    EPW(epw_path).to_ddy(tmp)
+    sim_par.sizing_parameter.add_from_ddy(tmp)
+    return 'epw extremes'
+
+
 def write_idf(model, epw_path, folder, outputs=DEFAULT_OUTPUTS, timestep=4,
-              run_period=None, north=0.0):
+              run_period=None, north=0.0, ideal_air=False):
     """Write in.idf (model + simulation parameters + site location).
 
     ``north`` is the Ladybug north angle (counterclockwise degrees from +Y).
+    ``ideal_air`` adds sizing design days (needed to autosize ideal air systems);
+    without it the sizing runs are switched off.
     """
     os.makedirs(folder, exist_ok=True)
     sim_par = SimulationParameter()
     sim_par.timestep = timestep
+    if ideal_air:
+        _design_days(sim_par, epw_path, folder)
+    else:
+        sim_par.simulation_control.do_zone_sizing = False
+        sim_par.simulation_control.do_system_sizing = False
+        sim_par.simulation_control.do_plant_sizing = False
     sim_par.north_angle = float(north) % 360
     sim_par.shadow_calculation.calculation_frequency = 30  # days between shadow updates
     # no solar reflections from context: much cheaper with many shading surfaces
@@ -302,7 +329,7 @@ def write_idf(model, epw_path, folder, outputs=DEFAULT_OUTPUTS, timestep=4,
 
 
 def run(model, epw_path, folder, energyplus_path, outputs=DEFAULT_OUTPUTS, timestep=4,
-        run_period=None, north=0.0):
+        run_period=None, north=0.0, ideal_air=False):
     """Write the IDF, run EnergyPlus and return (sql_path, err_path, seconds)."""
     if not folders.energyplus_path or os.path.normpath(folders.energyplus_path) != \
             os.path.normpath(energyplus_path):
@@ -314,7 +341,7 @@ def run(model, epw_path, folder, energyplus_path, outputs=DEFAULT_OUTPUTS, times
             except OSError:
                 pass
     t0 = time.time()
-    idf = write_idf(model, epw_path, folder, outputs, timestep, run_period, north)
+    idf = write_idf(model, epw_path, folder, outputs, timestep, run_period, north, ideal_air)
     sql, zsz, rdd, html, err = run_idf(idf, epw_path, expand_objects=True, silent=True)
     fatal = []
     if err and os.path.isfile(err):
@@ -360,6 +387,20 @@ def read_results(sql_path, model, output='Zone Operative Temperature',
     for c in colls:
         zone = c.header.metadata.get('Zone', '').upper()
         by_zone[zone] = c
+    # ideal air heating/cooling energy per zone (J -> kWh), zero when free running
+    energy = {}
+    for key, name in (('cool_kwh', 'Zone Ideal Loads Supply Air Total Cooling Energy'),
+                      ('heat_kwh', 'Zone Ideal Loads Supply Air Total Heating Energy')):
+        try:
+            for c in sql.data_collections_by_output_name(name):
+                md = c.header.metadata
+                zone = (md.get('Zone') or md.get('System', '')).upper().replace(' IDEAL LOADS AIR SYSTEM', '')
+                total = sum(c.values)
+                if c.header.unit == 'J':
+                    total /= 3.6e6  # ladybug usually converts to kWh already
+                energy.setdefault(zone, {})[key] = total
+        except Exception:  # noqa: BLE001 (output not in this run)
+            pass
     results, summary = {}, {}
     for room in model.rooms:
         c = by_zone.get(room.identifier.upper())
@@ -370,10 +411,13 @@ def read_results(sql_path, model, output='Zone Operative Temperature',
         n = len(vals)
         hot = sum(1 for v in vals if v > comfort_high)
         cold = sum(1 for v in vals if v < comfort_low)
+        z_energy = energy.get(room.identifier.upper(), {})
         summary[room.identifier] = {
             'name': room.display_name, 'mean': sum(vals) / n, 'min': min(vals),
             'max': max(vals), 'hours_hot': hot, 'hours_cold': cold,
             'pct_comfort': 100.0 * (n - hot - cold) / n,
+            'cool_kwh': z_energy.get('cool_kwh', 0.0), 'heat_kwh': z_energy.get('heat_kwh', 0.0),
+            'floor_area': room.floor_area,
         }
     return results, summary
 

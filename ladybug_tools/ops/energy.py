@@ -8,6 +8,7 @@ import numpy as np
 from ladybug.datatype.temperature import Temperature
 from ladybug.datatype.time import Time
 from ladybug.datatype.fraction import Fraction
+from ladybug.datatype.energy import Energy
 from ladybug.legend import Legend
 
 
@@ -24,6 +25,8 @@ METRICS = {
     'hours_hot': ('Hours Above Comfort', Time, 'hr', 'hours_hot'),
     'hours_cold': ('Hours Below Comfort', Time, 'hr', 'hours_cold'),
     'pct_comfort': ('Comfortable Hours', Fraction, '%', 'pct_comfort'),
+    'cool_kwh': ('Cooling Energy (Ideal Air)', Energy, 'kWh', 'cool_kwh'),
+    'heat_kwh': ('Heating Energy (Ideal Air)', Energy, 'kWh', 'heat_kwh'),
 }
 
 
@@ -104,7 +107,8 @@ class LB_OT_energy_simulate(bpy.types.Operator):
                 from ladybug.dt import Date
                 run_period = RunPeriod(Date(1, 1), Date(1, min(int(days), 31)))
             sql, err, secs = energy_sim.run(model, epw, folder, ep, timestep=p.en_timestep,
-                                            run_period=run_period, north=p.north)
+                                            run_period=run_period, north=p.north,
+                                            ideal_air=(p.en_hvac == 'IDEAL_AIR'))
             progress(0.9)
             colls, summary = energy_sim.read_results(
                 sql, model, comfort_low=p.en_comfort_low, comfort_high=p.en_comfort_high)
@@ -203,6 +207,16 @@ class LB_OT_energy_report(bpy.types.Operator):
                 s['name'][:20], kinds.get(ident, ''), s['mean'], s['min'], s['max'],
                 s['hours_hot'], p.en_comfort_high, s['hours_cold'], p.en_comfort_low,
                 s['pct_comfort'])
+            if s.get('cool_kwh') or s.get('heat_kwh'):
+                line += ' | cool {:6.0f} kWh, heat {:5.0f} kWh ({:.0f} kWh/m2)'.format(
+                    s['cool_kwh'], s['heat_kwh'],
+                    (s['cool_kwh'] + s['heat_kwh']) / max(s.get('floor_area', 0) or 1e-6, 1e-6))
+            print('[Ladybug]', line)
+            self.report({'INFO'}, line)
+        tot_c = sum(s.get('cool_kwh', 0) for s in summary.values())
+        tot_h = sum(s.get('heat_kwh', 0) for s in summary.values())
+        if tot_c or tot_h:
+            line = 'TOTAL ideal air: cooling {:.0f} kWh, heating {:.0f} kWh'.format(tot_c, tot_h)
             print('[Ladybug]', line)
             self.report({'INFO'}, line)
         return {'FINISHED'}

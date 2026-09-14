@@ -201,6 +201,8 @@ class LBSceneProps(bpy.types.PropertyGroup):
         name='Metric', default='hours_hot',
         items=[('hours_hot', 'Hours Above Comfort', ''),
                ('hours_cold', 'Hours Below Comfort', ''),
+               ('cool_kwh', 'Cooling Energy', 'Ideal air cooling, kWh (zero when free running)'),
+               ('heat_kwh', 'Heating Energy', 'Ideal air heating, kWh (zero when free running)'),
                ('pct_comfort', 'Comfortable Hours %', ''),
                ('mean', 'Mean Temperature', ''),
                ('max', 'Max Temperature', ''),

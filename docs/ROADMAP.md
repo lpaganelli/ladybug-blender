@@ -180,6 +180,16 @@ aviso quando o limite de uma porta/janela é bem menor que o elemento
 legenda dos estudos (posição, orientação, *Draw Legend*) e *Rebuild Legend*
 também a refaz; padrões: legenda *Flat* e *Undo Site Rotation* desligado.
 
+v0.6.10: *Ideal Air* com dias de projeto (o `.ddy` ao lado do EPW, ou
+extremos do próprio EPW), sem eles o EnergyPlus abortava o dimensionamento;
+no *Free Running* o dimensionamento é desligado. A tira de forro que sobra
+sob a parede da zona de cima (limite virtual externo, pequena) vira
+adiabática em vez de exterior.
+O relatório e as métricas ganham a energia de resfriamento e aquecimento
+do *Ideal Air* por ambiente (kWh e kWh/m²) e o total; no *Free Running* fica
+zero. Rodada de 3 dias de janeiro com Ideal Air: 80 kWh de resfriamento,
+cozinha 35 kWh (equipamentos), Lavabo 2,2 kWh/m², o maior por área.
+
 Pendências:
 
 - **Tempo**: a conversão leva ~35 s, quase tudo na mesclagem do contexto

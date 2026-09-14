@@ -563,6 +563,7 @@ class IfcToHoneybee(object):
                     (g, rel.PhysicalOrVirtualBoundary == 'PHYSICAL',
                      rel.InternalOrExternalBoundary == 'EXTERNAL'))
 
+        open_tops = []
         for i, face in enumerate(room.faces):
             fg = face.geometry
             matches = []
@@ -605,21 +606,33 @@ class IfcToHoneybee(object):
                     face.boundary_condition = bcs.ground
                 else:
                     face.boundary_condition = bcs.outdoors
-                if not physical and el is None and face.type == face_types.roof_ceiling                         and fg.normal.z > 0.5:
-                    # open to the sky with no element: a skylight (light well top)
-                    try:
-                        c = fg.center
-                        glass = Face3D([p.move((c - p) * 0.04) for p in fg.boundary], fg.plane)
-                        ap = Aperture(_ident('{}_skylight'.format(face.identifier)), glass)
-                        ap.properties.energy.construction = self.lib.window_construction(space)
-                        ap.display_name = 'Claraboia'
-                        ap.user_data = {'ifc_class': 'skylight'}
-                        face.add_aperture(ap)
-                        counts['skylights'] += 1
-                        self.warnings.append('{}: open top without element treated as skylight'.format(name))
-                    except Exception:  # noqa: BLE001
-                        pass
+                if not physical and (el is None or el.is_a('IfcVirtualElement')) \
+                        and face.type == face_types.roof_ceiling and fg.normal.z > 0.5:
+                    open_tops.append(face)  # no element above: skylight or a sliver
             counts[str(face.type)] += 1
+
+        # a virtual exterior top: the whole top of a light well is its skylight;
+        # a small piece next to slab/void faces is the strip under a wall of the
+        # zone above (no zone there), which touches nothing outdoors
+        top_area = sum(f.area for f in room.faces if f.type == face_types.roof_ceiling)
+        for face in open_tops:
+            if top_area and face.area < 0.4 * top_area:
+                face.boundary_condition = bcs.adiabatic
+                counts['virtual_slivers'] += 1
+                continue
+            try:
+                fg = face.geometry
+                c = fg.center
+                glass = Face3D([pt.move((c - pt) * 0.04) for pt in fg.boundary], fg.plane)
+                ap = Aperture(_ident('{}_skylight'.format(face.identifier)), glass)
+                ap.properties.energy.construction = self.lib.window_construction(space)
+                ap.display_name = 'Claraboia'
+                ap.user_data = {'ifc_class': 'skylight'}
+                face.add_aperture(ap)
+                counts['skylights'] += 1
+                self.warnings.append('{}: open top without element treated as skylight'.format(name))
+            except Exception:  # noqa: BLE001
+                pass
 
         # ---- windows / doors ----
         for rel, el, g in subs:
@@ -1105,6 +1118,19 @@ class IfcToHoneybee(object):
         n_adj = len(adj.get('adjacent_faces', []))
         n_adj += self._pair_internal_faces(rooms)
         self.report['air_boundaries'] = self.report.get('air_boundaries', 0) + self._voids_to_air(rooms)
+        # after the coincident split, a small exterior top piece with only a
+        # virtual boundary at its center is the strip under a wall of the zone
+        # above (the zone above stops at the wall): nothing outdoors touches it
+        n_slivers = 0
+        for room in rooms:
+            tops = [f for f in room.faces if f.type == face_types.roof_ceiling]
+            top_area = sum(f.area for f in tops)
+            for f in tops:
+                if f.boundary_condition.name == 'Outdoors' and not f.has_sub_faces and                         top_area and f.area < 0.4 * top_area and self._is_virtual_at(room, f.geometry):
+                    f.boundary_condition = bcs.adiabatic
+                    n_slivers += 1
+        if n_slivers:
+            self.warnings.append('{} small virtual top pieces set adiabatic (under walls of the zone above)'.format(n_slivers))
         self._unify_adjacent_constructions(rooms)
         self.timings['adjacency'] = round(time.time() - t_adj, 1)
         # internal boundaries that found no neighbour become adiabatic; an
