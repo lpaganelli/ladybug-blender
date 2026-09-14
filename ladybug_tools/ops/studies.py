@@ -644,9 +644,16 @@ class LB_OT_rebuild_legend(bpy.types.Operator):
                 and o.name.find(' Legend') < 0]
         if p.st_show != 'ALL':
             pool = [o for o in pool if o.get(STUDY_PROP) == p.st_show]
+        from .energy import _LAST_RUN, color_rooms
         if not pool:
+            if _LAST_RUN.get('summary'):
+                n = color_rooms(context, p.en_metric)
+                self.report({'INFO'}, 'Energy legend rebuilt ({} rooms)'.format(n))
+                return {'FINISHED'}
             self.report({'ERROR'}, 'No study results found to rebuild')
             return {'CANCELLED'}
+        if _LAST_RUN.get('summary'):
+            color_rooms(context, p.en_metric)
 
         rebuilt = []
         for label in STUDY_KINDS:

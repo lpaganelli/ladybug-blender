@@ -103,6 +103,19 @@ ambiente fica com um forro fechado para o ático.
   entre duas faces da mesma parede é recortada em cada face.
 - O IFC não diz se a porta tem vidro (o `Pset_DoorCommon` do ArchiCAD sai
   vazio), por isso a regra por nome.
+- **Feche as portas e janelas antes de exportar.** O limite de espaço que o
+  ArchiCAD gera para uma porta aberta cobre só a folha fechada (uma porta de
+  correr de duas folhas com uma aberta sai com metade da área). O add-on
+  avisa quando o limite é bem menor que a porta ("boundary of IfcDoor PA06
+  is 1.9 m2 for a 3.8 m2 element").
+
+## Editar o modelo à mão
+
+O `HB Context` pode ser editado na cena. Os rooms e as aberturas não:
+para mudar tipos de face, condições de contorno, construções ou aberturas,
+use *Export HBJSON*, edite o arquivo (texto JSON, ou qualquer ferramenta
+Honeybee, Grasshopper ou Pollination) e traga de volta com *Import HBJSON*.
+O modelo importado é o que a simulação usa.
 
 ## Contexto de sombreamento
 
@@ -131,10 +144,10 @@ as duas (o IFC também traz o norte; o fuso horário fica o do EPW).
 Posição do modelo no translator (*Definir a posição do modelo IFC por*).
 O ArchiCAD 29 **não grava o `TrueNorth`** (fica sempre +Y). O norte só sai
 como rotação do `IfcSite` quando se exporta com *Ponto de Origem e Origem do
-Projeto*. Com a opção *Undo Site Rotation* do painel (ligada por padrão) o
-add-on desfaz essa rotação, deixa a geometria nos eixos do projeto (mesma
-orientação do FBX e do DWG) e passa o ângulo para o campo *North*. Com a
-opção desligada a geometria fica girada com o norte em +Y e *North* = 0.
+Projeto*. Por padrão a geometria fica girada, como o Bonsai a mostra, com
+o norte em +Y e *North* = 0. A opção *Undo Site Rotation* do painel desfaz
+essa rotação, deixa a geometria nos eixos do projeto (mesma orientação do
+FBX e do DWG, mas não a do Bonsai) e passa o ângulo para o campo *North*.
 Com *Origem do Projeto apenas* nada carrega o norte: digite-o no painel
 (o valor da *Localização do Projeto*, graus anti-horários a partir de +Y).
 Coordenadas saem certas nos dois casos.

@@ -161,7 +161,7 @@ class LBSceneProps(bpy.types.PropertyGroup):
     hb_context: BoolProperty(name='Context Shades', default=True,
                              description='Add unbounded roofs, slabs and walls as shading')
     hb_local_coords: BoolProperty(
-        name='Undo Site Rotation', default=True,
+        name='Undo Site Rotation', default=False,
         description='Keep the geometry in the project axes (as modelled) and turn the IfcSite '
                     'rotation written by ArchiCAD for the survey-point north into the North angle')
     hb_glass_doors: StringProperty(
@@ -250,7 +250,7 @@ class LBSceneProps(bpy.types.PropertyGroup):
         items=[('BESIDE', 'Beside Results', 'Next to the bounding box of the batch'),
                ('CURSOR', '3D Cursor', 'At the 3D cursor')])
     lg_orientation: EnumProperty(
-        name='Orientation', default='UPRIGHT',
+        name='Orientation', default='FLAT',
         items=[('UPRIGHT', 'Upright', 'Standing in the XZ plane, facing -Y'),
                ('FLAT', 'Flat', 'Lying on the XY plane (Ladybug default)')])
 

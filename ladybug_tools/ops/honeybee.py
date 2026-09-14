@@ -109,6 +109,31 @@ class LB_OT_hbjson_export(bpy.types.Operator, ImportHelper):
         return {'FINISHED'}
 
 
+class LB_OT_hbjson_import(bpy.types.Operator, ImportHelper):
+    """Load a Honeybee model from an HBJSON file (edited by hand or elsewhere) and draw it"""
+    bl_idname = 'ladybug.hbjson_import'
+    bl_label = 'Import HBJSON'
+    bl_options = {'REGISTER', 'UNDO'}
+    filename_ext = '.hbjson'
+    filter_glob: StringProperty(default='*.hbjson', options={'HIDDEN'})
+
+    def execute(self, context):
+        from honeybee.model import Model
+        try:
+            model = Model.from_hbjson(self.filepath)
+        except Exception as exc:  # noqa: BLE001
+            self.report({'ERROR'}, 'Cannot read HBJSON: {}'.format(exc))
+            return {'CANCELLED'}
+        _LAST_MODEL.update(model=model, report=_LAST_MODEL['report'], path=self.filepath)
+        p = common.props(context)
+        if p.hb_draw:
+            from ..core import hb_viz
+            hb_viz.draw_model(context, model, p.hb_color_by)
+        self.report({'INFO'}, 'Loaded {} rooms, {} shades from {}'.format(
+            len(model.rooms), len(model.orphaned_shades), os.path.basename(self.filepath)))
+        return {'FINISHED'}
+
+
 class LB_OT_hb_redraw(bpy.types.Operator):
     """Redraw the last Honeybee model with the chosen coloring"""
     bl_idname = 'ladybug.hb_redraw'
@@ -193,8 +218,8 @@ class LB_OT_hb_openings(bpy.types.Operator):
         return {'FINISHED'}
 
 
-CLASSES = (LB_OT_ifc_pick, LB_OT_ifc_to_honeybee, LB_OT_hbjson_export, LB_OT_hb_redraw,
-           LB_OT_location_from_ifc, LB_OT_hb_openings)
+CLASSES = (LB_OT_ifc_pick, LB_OT_ifc_to_honeybee, LB_OT_hbjson_export, LB_OT_hbjson_import,
+           LB_OT_hb_redraw, LB_OT_location_from_ifc, LB_OT_hb_openings)
 
 
 def register():

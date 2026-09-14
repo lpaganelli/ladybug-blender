@@ -426,6 +426,7 @@ class IfcToHoneybee(object):
         self.report = {}
         self.model = None
         self._room_bnds = {}  # room identifier -> [(Face3D, physical, external)]
+        self._small_openings = set()
         self.site_rotation, self.site_offset = self._site_placement()
         self.location = self._site_location()
 
@@ -622,6 +623,15 @@ class IfcToHoneybee(object):
 
         # ---- windows / doors ----
         for rel, el, g in subs:
+            w, h = getattr(el, 'OverallWidth', None), getattr(el, 'OverallHeight', None)
+            if w and h:
+                nominal = float(w) * float(h) * self.scale * self.scale
+                if g.area < 0.7 * nominal and el.Name not in self._small_openings:
+                    self._small_openings.add(el.Name)
+                    self.warnings.append(
+                        '{}: boundary of {} "{}" is {:.1f} m2 for a {:.1f} m2 element; if the leaf '
+                        'is open in the model, close it before exporting'.format(
+                            name, el.is_a(), el.Name, g.area, nominal))
             hosts = self._host_faces(room.faces, g)
             if not hosts:
                 counts['orphan_openings'] += 1

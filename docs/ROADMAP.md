@@ -174,6 +174,12 @@ altura 0 e eficácia de vento 0 para aberturas horizontais (fluxo zero), o
 IDF é corrigido com metade da altura da zona como altura de chaminé e
 eficácia automática. Lavabo em janeiro: 29,9 → 28,7 °C com `Claraboia=0.25`.
 
+v0.6.9: *Import HBJSON* (edição manual do modelo fora do Blender e volta);
+aviso quando o limite de uma porta/janela é bem menor que o elemento
+(folha aberta no ArchiCAD); a legenda de energia segue as mesmas regras da
+legenda dos estudos (posição, orientação, *Draw Legend*) e *Rebuild Legend*
+também a refaz; padrões: legenda *Flat* e *Undo Site Rotation* desligado.
+
 Pendências:
 
 - **Tempo**: a conversão leva ~35 s, quase tudo na mesclagem do contexto

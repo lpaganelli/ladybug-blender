@@ -9,7 +9,7 @@ from ladybug.datatype.temperature import Temperature
 from ladybug.datatype.time import Time
 from ladybug.datatype.fraction import Fraction
 from ladybug.legend import Legend
-from ladybug_geometry.geometry3d import Plane, Point3D, Vector3D
+
 
 from . import common
 from .honeybee import _LAST_MODEL
@@ -152,11 +152,8 @@ def color_rooms(context, metric_key):
     l_par.decimal_count = 1 if (l_par.max - l_par.min) < 50 else 0
     seg_h = p.lg_size / l_par.segment_count
     l_par.segment_height, l_par.segment_width, l_par.text_height = seg_h, seg_h * 0.6, seg_h * 0.35
-    boxes = [bg.bbox_world(o) for o, _v in items]
-    origin = Point3D(max(b[1].x for b in boxes) + p.lg_size * 0.25,
-                     min(b[0].y for b in boxes), min(b[0].z for b in boxes))
-    l_par.base_plane = Plane(n=Vector3D(0, -1, 0), o=origin, x=Vector3D(1, 0, 0)) \
-        if p.lg_orientation == 'UPRIGHT' else Plane(o=origin)
+    from .studies import _legend_plane  # same placement rules as the solar studies
+    l_par.base_plane = _legend_plane(context, [(o, None, v) for o, v in items])
     legend = Legend(values, l_par)
     rng = legend.color_range
     for ob, v in items:
@@ -166,9 +163,10 @@ def color_rooms(context, metric_key):
         ob['hb_' + field] = float(v)
     coll = bg.get_collection(context, 'Honeybee')
     bg.remove_objects_by_prefix(coll, 'HB Energy Legend')
-    for lo in bg.legend_objects(legend, 'HB Energy Legend', coll,
-                                title='{} ({})\n{}'.format(title, unit, dtype().name)):
-        lo['ladybug_study'] = 'Energy'
+    if p.lg_show:
+        for lo in bg.legend_objects(legend, 'HB Energy Legend', coll,
+                                    title='{} ({})\n{}'.format(title, unit, dtype().name)):
+            lo['ladybug_study'] = 'Energy'
     bg.show_attribute_colors(context)
     return len(items)
 
