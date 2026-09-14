@@ -44,11 +44,18 @@ SPACE_KINDS = (
 )
 
 
+def _plain(text):
+    """Lowercase text without accents, for name matching ('Suíte' -> 'suite')."""
+    import unicodedata
+    return ''.join(ch for ch in unicodedata.normalize('NFKD', (text or '').lower())
+                   if not unicodedata.combining(ch))
+
+
 def classify_space(name):
     """Space kind ('bedroom', 'living', ...) from a room name; 'service' if unknown."""
-    n = (name or '').lower()
+    n = _plain(name)
     for kind, words in SPACE_KINDS:
-        if any(w in n for w in words):
+        if any(_plain(w) in n for w in words):
             return kind
     return 'service'
 
@@ -161,7 +168,7 @@ def operable_fraction_for(aperture, openings, default=0.5):
 
 def prepare_model(model, hvac='FREE_RUNNING', vent_min_indoor=22.0,
                   vent_min_outdoor=16.0, vent_max_outdoor=32.0, operable_fraction=0.5,
-                  window_openings=None):
+                  window_openings=None, conditioned=None):
     """Assign residential programs and either natural ventilation or ideal air.
 
     ``window_openings`` maps window names (or name prefixes, e.g. the IFC
@@ -178,7 +185,12 @@ def prepare_model(model, hvac='FREE_RUNNING', vent_min_indoor=22.0,
         kinds[room.identifier] = kind
         room.properties.energy.program_type = programs[kind]
         if hvac == 'IDEAL_AIR':
-            if kind not in ('garage', 'service', 'attic', 'shaft'):
+            rname = _plain(room.display_name or room.identifier)
+            if conditioned:
+                cond = any(_plain(w) in rname for w in conditioned)
+            else:
+                cond = kind not in ('garage', 'service', 'attic', 'shaft')
+            if cond:
                 room.properties.energy.add_default_ideal_air()
         else:  # free running: windows open when it is warm inside and mild outside
             room.properties.energy.hvac = None
@@ -273,25 +285,66 @@ DEFAULT_OUTPUTS = (
 
 def _design_days(sim_par, epw_path, folder):
     """Sizing design days for ideal air: the .ddy next to the EPW, else from the EPW."""
+    from ladybug.ddy import DDY
     ddy = os.path.splitext(epw_path)[0] + '.ddy'
-    if os.path.isfile(ddy):
-        try:
-            sim_par.sizing_parameter.add_from_ddy_996_004(ddy)
-            return 'ddy'
-        except Exception:  # noqa: BLE001 (keywords not found in this ddy)
-            try:
-                sim_par.sizing_parameter.add_from_ddy(ddy)
-                return 'ddy (all)'
-            except Exception:  # noqa: BLE001
-                pass
-    tmp = os.path.join(folder, 'from_epw.ddy')
-    EPW(epw_path).to_ddy(tmp)
-    sim_par.sizing_parameter.add_from_ddy(tmp)
-    return 'epw extremes'
+    source = 'ddy'
+    if not os.path.isfile(ddy):
+        ddy = os.path.join(folder, 'from_epw.ddy')
+        EPW(epw_path).to_ddy(ddy)
+        source = 'epw extremes'
+    days = DDY.from_ddy_file(ddy).design_days
+    if not days:
+        return None
+    # every design day is a full simulation day with shadow calculations, so
+    # keep the two that size the system: the coldest and the hottest dry bulb
+    heating = [d for d in days if d.day_type == 'WinterDesignDay'] or days
+    cooling = [d for d in days if d.day_type == 'SummerDesignDay'] or days
+    ann_h = [d for d in heating if 'Ann Htg 99.6% Condns DB' in d.name]
+    ann_c = [d for d in cooling if 'Ann Clg .4% Condns DB' in d.name]
+    pick = [ann_h[0] if ann_h else min(heating, key=lambda d: d.dry_bulb_condition.dry_bulb_max),
+            ann_c[0] if ann_c else max(cooling, key=lambda d: d.dry_bulb_condition.dry_bulb_max)]
+    for d in pick:
+        sim_par.sizing_parameter.add_design_day(d)
+    return source
+
+
+def _open_doorways_idf(model, names, flow_per_area=0.1):
+    """ZoneCrossMixing for doors that are open passages (no leaf) between two rooms.
+
+    ``flow_per_area`` is m3/s per m2 of doorway, the same figure Honeybee uses
+    for air boundaries. The nominal door size from the IFC is used when the
+    exported boundary is only a part of it.
+    """
+    if not names:
+        return ''
+    blocks = ['Schedule:Constant,\n LB Always On,             !- schedule name\n'
+              ' ,                        !- schedule type limits\n 1.0;                      !- value']
+    faces = {f.identifier: f for r in model.rooms for f in r.faces}
+    done = set()
+    for room in model.rooms:
+        for face in room.faces:
+            if face.boundary_condition.name != 'Surface':
+                continue
+            other = faces.get(face.boundary_condition.boundary_condition_object)
+            if other is None or not other.has_parent:
+                continue
+            for door in face.doors:
+                if (door.display_name or '').upper() not in names:
+                    continue
+                key = tuple(sorted((room.identifier, other.parent.identifier, door.display_name or '')))
+                if key in done:
+                    continue
+                done.add(key)
+                area = max(door.area, float((door.user_data or {}).get('nominal_area') or 0.0))
+                blocks.append(
+                    'ZoneCrossMixing,\n {},\n {},\n LB Always On,\n Flow/Zone,\n {:.4f},\n ,\n ,\n ,\n {};'.format(
+                        '{}_{}_Doorway'.format(door.identifier, room.identifier), room.identifier,
+                        area * flow_per_area, other.parent.identifier))
+    return '\n\n'.join(blocks) if len(blocks) > 1 else ''
 
 
 def write_idf(model, epw_path, folder, outputs=DEFAULT_OUTPUTS, timestep=4,
-              run_period=None, north=0.0, ideal_air=False):
+              run_period=None, north=0.0, ideal_air=False, open_doors=()):
     """Write in.idf (model + simulation parameters + site location).
 
     ``north`` is the Ladybug north angle (counterclockwise degrees from +Y).
@@ -322,6 +375,9 @@ def write_idf(model, epw_path, folder, outputs=DEFAULT_OUTPUTS, timestep=4,
     idf_str = '\n\n'.join((energyplus_idf_version(), sim_par.to_idf(), location_idf,
                            ground_temperature_idf(epw), model_to_idf(model)))
     idf_str = _fix_horizontal_openings(idf_str, model)
+    doorways = _open_doorways_idf(model, set(open_doors or ()))
+    if doorways:
+        idf_str += chr(10) * 2 + doorways
     idf_path = os.path.join(folder, 'in.idf')
     with open(idf_path, 'w', encoding='utf-8') as f:
         f.write(idf_str)
@@ -329,7 +385,7 @@ def write_idf(model, epw_path, folder, outputs=DEFAULT_OUTPUTS, timestep=4,
 
 
 def run(model, epw_path, folder, energyplus_path, outputs=DEFAULT_OUTPUTS, timestep=4,
-        run_period=None, north=0.0, ideal_air=False):
+        run_period=None, north=0.0, ideal_air=False, open_doors=()):
     """Write the IDF, run EnergyPlus and return (sql_path, err_path, seconds)."""
     if not folders.energyplus_path or os.path.normpath(folders.energyplus_path) != \
             os.path.normpath(energyplus_path):
@@ -341,7 +397,8 @@ def run(model, epw_path, folder, energyplus_path, outputs=DEFAULT_OUTPUTS, times
             except OSError:
                 pass
     t0 = time.time()
-    idf = write_idf(model, epw_path, folder, outputs, timestep, run_period, north, ideal_air)
+    idf = write_idf(model, epw_path, folder, outputs, timestep, run_period, north, ideal_air,
+                    open_doors)
     sql, zsz, rdd, html, err = run_idf(idf, epw_path, expand_objects=True, silent=True)
     fatal = []
     if err and os.path.isfile(err):

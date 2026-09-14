@@ -254,6 +254,9 @@ class LB_PT_honeybee(LBPanel, bpy.types.Panel):
             row.prop(p, 'en_vent_max_outdoor')
             col.prop(p, 'en_operable_default')
             col.prop(p, 'en_window_openings', placeholder='JA01=0, JA02=0.5, JA04=0.75')
+        else:
+            box.prop(p, 'en_conditioned', placeholder='all occupied rooms')
+        box.prop(p, 'en_open_doors', placeholder='PM01, PM04')
         row = box.row(align=True)
         row.prop(p, 'en_comfort_low')
         row.prop(p, 'en_comfort_high')

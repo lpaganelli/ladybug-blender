@@ -98,7 +98,8 @@ class LB_OT_energy_simulate(bpy.types.Operator):
                 model, hvac=p.en_hvac, vent_min_indoor=p.en_vent_min_indoor,
                 vent_min_outdoor=p.en_vent_min_outdoor, vent_max_outdoor=p.en_vent_max_outdoor,
                 operable_fraction=p.en_operable_default,
-                window_openings=energy_sim.parse_window_openings(p.en_window_openings))
+                window_openings=energy_sim.parse_window_openings(p.en_window_openings),
+                conditioned=[w.strip().lower() for w in p.en_conditioned.split(',') if w.strip()])
             progress(0.1)
             run_period = None
             days = os.environ.get('LB_ENERGY_DAYS')  # short runs for automated tests
@@ -108,7 +109,8 @@ class LB_OT_energy_simulate(bpy.types.Operator):
                 run_period = RunPeriod(Date(1, 1), Date(1, min(int(days), 31)))
             sql, err, secs = energy_sim.run(model, epw, folder, ep, timestep=p.en_timestep,
                                             run_period=run_period, north=p.north,
-                                            ideal_air=(p.en_hvac == 'IDEAL_AIR'))
+                                            ideal_air=(p.en_hvac == 'IDEAL_AIR'),
+                                            open_doors=[w.strip().upper() for w in p.en_open_doors.split(',') if w.strip()])
             progress(0.9)
             colls, summary = energy_sim.read_results(
                 sql, model, comfort_low=p.en_comfort_low, comfort_high=p.en_comfort_high)

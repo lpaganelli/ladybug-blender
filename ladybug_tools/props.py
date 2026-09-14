@@ -195,6 +195,14 @@ class LBSceneProps(bpy.types.PropertyGroup):
         name='Windows', default='',
         description='Per window type, name=fraction: e.g. "JA01=0, JA02=0.5, JA04=0.75" '
                     '(0 = fixed glazing). Names match the IFC window names as prefixes')
+    en_open_doors: StringProperty(
+        name='Open Doorways', default='',
+        description='Door names that are open passages without a leaf ("PM01, PM04"): '
+                    'air is exchanged freely between the two rooms')
+    en_conditioned: StringProperty(
+        name='Conditioned', default='',
+        description='Ideal Air only in rooms whose name contains one of these words '
+                    '("sala, suite, quarto"); empty = every occupied room')
     en_comfort_low: FloatProperty(name='Comfort Min', default=18.0)
     en_comfort_high: FloatProperty(name='Comfort Max', default=26.0)
     en_metric: EnumProperty(

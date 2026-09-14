@@ -193,6 +193,24 @@ def merge_coplanar(faces, tol=TOL, angle_tol=0.02):
     return out
 
 
+def _overlap_area(a, b, tol):
+    """Area shared by two coplanar Face3Ds (b already projected onto a's plane)."""
+    from ladybug_geometry.geometry2d import Polygon2D
+    plane = a.plane
+    try:
+        pa = Polygon2D(tuple(plane.xyz_to_xy(p) for p in a.boundary))
+        pb = Polygon2D(tuple(plane.xyz_to_xy(p) for p in b.boundary))
+        if pa.is_clockwise:
+            pa = pa.reverse()
+        if pb.is_clockwise:
+            pb = pb.reverse()
+        return sum(p.area for p in pa.boolean_intersect(pb, tol))
+    except Exception:  # noqa: BLE001
+        # fall back to the center test
+        return min(a.area, b.area) if (a.is_point_on_face(b.center, 0.05) or
+                                       b.is_point_on_face(a.center, 0.05)) else 0.0
+
+
 def _convex_pieces(face, tol):
     """Convex, hole-free, planar pieces of a face for EnergyPlus shading.
 
@@ -615,10 +633,15 @@ class IfcToHoneybee(object):
         # a small piece next to slab/void faces is the strip under a wall of the
         # zone above (no zone there), which touches nothing outdoors
         top_area = sum(f.area for f in room.faces if f.type == face_types.roof_ceiling)
+        from .energy_sim import classify_space
         for face in open_tops:
             if top_area and face.area < 0.4 * top_area:
                 face.boundary_condition = bcs.adiabatic
                 counts['virtual_slivers'] += 1
+                continue
+            if classify_space(name) != 'shaft':
+                # an uncovered zone (yard, pool deck): open sky, not glass
+                self.warnings.append('{}: top open to the sky; exclude this zone or roof it'.format(name))
                 continue
             try:
                 fg = face.geometry
@@ -692,7 +715,8 @@ class IfcToHoneybee(object):
                         parent.add_aperture(obj)
                         counts['apertures'] += 1
                     obj.display_name = el.Name
-                    obj.user_data = {'ifc_guid': el.GlobalId, 'ifc_class': el.is_a()}
+                    obj.user_data = {'ifc_guid': el.GlobalId, 'ifc_class': el.is_a(),
+                                     'nominal_area': (float(w) * float(h) * self.scale * self.scale) if (w and h) else None}
                 placed += 1
             if not placed and not counts.get('duplicate_openings'):
                 counts['orphan_openings'] += 1
@@ -728,7 +752,7 @@ class IfcToHoneybee(object):
             if fa.boundary_condition.name == 'Surface':
                 continue
             ga = fa.geometry
-            best, best_gap = None, None
+            best, best_gap, best_score = None, None, None
             for rb, fb in candidates[i + 1:]:
                 if rb is ra or fb.boundary_condition.name == 'Surface':
                     continue
@@ -738,13 +762,14 @@ class IfcToHoneybee(object):
                 gap = ga.plane.distance_to_point(gb.center)
                 if gap < -self.tol or gap > max_gap:
                     continue
-                # overlap: project b onto a's plane and test centers
+                # overlap: project b onto a's plane and intersect the polygons
                 pb = Face3D([ga.plane.closest_point(p) for p in gb.boundary], ga.plane)
-                if not (ga.is_point_on_face(pb.center, 0.05) or
-                        pb.is_point_on_face(ga.center, 0.05)):
+                overlap = _overlap_area(ga, pb, self.tol)
+                if overlap < 0.05 or overlap < 0.2 * min(ga.area, pb.area):
                     continue
-                if best is None or gap < best_gap:
-                    best, best_gap = fb, gap
+                score = overlap - gap  # most shared area, then the closest
+                if best is None or score > best_score:
+                    best, best_gap, best_score = fb, gap, score
             if best is None:
                 continue
             coincident = best_gap <= self.tol * 2
@@ -794,6 +819,50 @@ class IfcToHoneybee(object):
             return rel.RelatingObject.Name
         c = ue.get_container(space)
         return c.Name if c is not None else None
+
+    def _split_across_walls(self, rooms, max_gap=0.5):
+        """Split wall faces by the projection of the faces across the wall.
+
+        Interior walls have their two faces a thickness apart, so
+        ``Room.intersect_adjacency`` (coincident faces only) does nothing for
+        them; a wall of one room facing two neighbours would pair with one and
+        leave the rest adiabatic, dropping its doors. Projecting each neighbour
+        face onto this room's wall plane and splitting with it gives one piece
+        per neighbour, which then pair with matching areas.
+        """
+        n_split = 0
+        for ra in rooms:
+            geos = []
+            for fa in ra.faces:
+                if fa.type != face_types.wall:
+                    continue
+                ga = fa.geometry
+                for rb in rooms:
+                    if rb is ra:
+                        continue
+                    for fb in rb.faces:
+                        if fb.type != face_types.wall:
+                            continue
+                        gb = fb.geometry
+                        if ga.normal.dot(gb.normal) > -0.98:
+                            continue
+                        gap = ga.plane.distance_to_point(gb.center)
+                        if gap < -self.tol or gap > max_gap:
+                            continue
+                        pb = Face3D([ga.plane.closest_point(p) for p in gb.boundary], ga.plane)
+                        ov = _overlap_area(ga, pb, self.tol)
+                        if ov < 0.05 or ov > 0.98 * ga.area:
+                            continue  # nothing shared, or the neighbour covers the face
+                        geos.append(pb)
+            if not geos:
+                continue
+            try:
+                n_split += len(ra.coplanar_split(geos, self.tol, ANGLE_TOL))
+            except Exception as exc:  # noqa: BLE001
+                self.warnings.append('{}: split across walls failed: {}'.format(ra.display_name, exc))
+        if n_split:
+            self.report['faces_split_across_walls'] = n_split
+        return n_split
 
     def _voids_to_air(self, rooms):
         """Surface pairs with no element on either side (a void in a slab between
@@ -1110,6 +1179,7 @@ class IfcToHoneybee(object):
         # split coincident faces so a slab under several rooms (attic floor)
         # gets one piece per room; walls across a thickness are not coincident
         # and are paired by _pair_internal_faces
+        self._split_across_walls(rooms)
         try:
             Room.intersect_adjacency(rooms, self.tol, ANGLE_TOL)
         except Exception as exc:  # noqa: BLE001
@@ -1160,6 +1230,40 @@ class IfcToHoneybee(object):
         if n_to_excluded:
             self.warnings.append(
                 '{} faces towards excluded spaces set to Outdoors'.format(n_to_excluded))
+
+        # sub-faces that no longer sit inside their (split) face would fail in EnergyPlus
+        n_bad = 0
+        dropped = set()
+
+        def _drop(face, bad):
+            keep_ap = [a for a in face.apertures if a not in bad]
+            keep_dr = [d for d in face.doors if d not in bad]
+            face.remove_sub_faces()
+            for a in keep_ap:
+                face.add_aperture(a)
+            for d in keep_dr:
+                face.add_door(d)
+            for s in bad:
+                dropped.add(s.identifier)
+                if s.boundary_condition.name == 'Surface':
+                    dropped.add(s.boundary_condition.boundary_condition_object)
+
+        for room in rooms:
+            for face in room.faces:
+                bad = [s for s in face.sub_faces
+                       if not face.geometry.is_sub_face(s.geometry, self.tol, ANGLE_TOL)]
+                if bad:
+                    n_bad += len(bad)
+                    _drop(face, bad)
+        # the partner of a dropped interior door/window must go too, or
+        # EnergyPlus reports a missing adjacent surface
+        for room in rooms:
+            for face in room.faces:
+                bad = [s for s in face.sub_faces if s.identifier in dropped]
+                if bad:
+                    _drop(face, bad)
+        if n_bad:
+            self.warnings.append('{} sub-faces outside their face after splitting were dropped'.format(n_bad))
 
         t_ctx = time.time()
         shades = self._context_shades(bounded_ids, rooms=rooms, reach=self.context_reach) \

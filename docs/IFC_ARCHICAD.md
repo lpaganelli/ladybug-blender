@@ -103,6 +103,13 @@ ambiente fica com um forro fechado para o ático.
   entre duas faces da mesma parede é recortada em cada face.
 - O IFC não diz se a porta tem vidro (o `Pset_DoorCommon` do ArchiCAD sai
   vazio), por isso a regra por nome.
+- **Vãos sem folha** (uma passagem entre cozinha e circulação modelada como
+  porta vazia) entram como porta opaca; liste-os em *Open Doorways* na
+  caixa EnergyPlus (`PM01`) e os dois ambientes trocam ar livremente pelo
+  vão (0,1 m³/s por m², a mesma taxa das fronteiras de ar). Isso exige que
+  o vão seja interno: os dois ambientes precisam existir como zona e
+  encostar na parede do vão. Se o trecho de passagem não está em nenhuma
+  zona, o IFC marca a porta como externa e ela sai como porta para fora.
 - **Feche as portas e janelas antes de exportar.** O limite de espaço que o
   ArchiCAD gera para uma porta aberta cobre só a folha fechada (uma porta de
   correr de duas folhas com uma aberta sai com metade da área). O add-on

@@ -69,12 +69,12 @@ HBJSON. Testado com a casa térrea do escritório: 12 rooms, 98 faces, 3 s.
 
 Pendências da ponte:
 
-- Faces internas emparelhadas com áreas diferentes (uma parede de um quarto
-  encosta em dois vizinhos). Desde a v0.6.4 as faces **coincidentes** (laje
-  sob vários ambientes) são divididas por `Room.intersect_adjacency`; falta
-  o caso das paredes, cujas faces ficam a uma espessura de distância:
-  projetar a face do vizinho e dividir (`Face3D.coplanar_split`) ou mover
-  ambas para o eixo da parede.
+- ~~Faces internas emparelhadas com áreas diferentes~~ (feito na v0.6.11):
+  faces coincidentes são divididas por `Room.intersect_adjacency` (v0.6.4)
+  e, através da espessura das paredes, cada face é dividida pela projeção
+  das faces dos vizinhos (`Room.coplanar_split`) antes de emparelhar; o
+  emparelhamento passou a usar a área de interseção em vez do centro. Sobra
+  o custo: mais faces e mais fragmentos de portas.
 - Zonas sem parede entre si viram *AirBoundary* só quando coincidem; garagem
   aberta continua como Outdoors.
 - Aberturas sem face hospedeira (porta na esquina, boundary fora do plano) são
@@ -189,6 +189,13 @@ O relatório e as métricas ganham a energia de resfriamento e aquecimento
 do *Ideal Air* por ambiente (kWh e kWh/m²) e o total; no *Free Running* fica
 zero. Rodada de 3 dias de janeiro com Ideal Air: 80 kWh de resfriamento,
 cozinha 35 kWh (equipamentos), Lavabo 2,2 kWh/m², o maior por área.
+
+v0.6.11: *Conditioned* limita o Ideal Air a alguns ambientes (palavras do
+nome); *Open Doorways* transforma portas sem folha em `ZoneCrossMixing`
+entre os dois ambientes, com a área nominal da porta do IFC. Dias de projeto
+reduzidos a dois (o `add_from_ddy_996_004` do honeybee traz 31, e cada um é
+um dia inteiro de simulação: Ideal Air de 3 dias caía de 77 s para 12 min).
+Faces de parede divididas pela projeção dos vizinhos: 35 → 49 pares.
 
 Pendências:
 
